@@ -8,6 +8,36 @@ export type HandoffResponse = {
   url: string;
 };
 
+export type ApprovalDecision = "approve" | "decline";
+
+export type ApprovalDecisionResponse = {
+  approval_id: string;
+  state: "approved" | "declined";
+  action_ids: string[];
+};
+
+export type RelayActionState =
+  | "planned"
+  | "awaiting_approval"
+  | "authorized"
+  | "dispatched"
+  | "in_progress"
+  | "succeeded"
+  | "needs_user"
+  | "retryable_failure"
+  | "failed"
+  | "verified"
+  | "handoff_opened";
+
+export type RelayAction = {
+  id: string;
+  type: "voice_call" | "calendar_hold" | "uber_deep_link";
+  state: RelayActionState;
+  target_ref: string;
+  authorization_snapshot: Record<string, unknown>;
+  retry_count: number;
+};
+
 function correlationId(): string {
   return globalThis.crypto.randomUUID();
 }
@@ -43,4 +73,26 @@ export async function openUberHandoff(actionId: string): Promise<HandoffResponse
   return relayFetch<HandoffResponse>("/v1/actions/" + encodeURIComponent(actionId) + "/open-handoff", {
     method: "POST",
   });
+}
+
+export async function decideApproval(
+  approvalId: string,
+  decision: ApprovalDecision,
+  expectedVersion: number,
+): Promise<ApprovalDecisionResponse> {
+  return relayFetch<ApprovalDecisionResponse>(
+    "/v1/approvals/" + encodeURIComponent(approvalId) + "/decision",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        approval_id: approvalId,
+        decision,
+        expected_version: expectedVersion,
+      }),
+    },
+  );
+}
+
+export async function getAction(actionId: string): Promise<RelayAction> {
+  return relayFetch<RelayAction>("/v1/actions/" + encodeURIComponent(actionId));
 }

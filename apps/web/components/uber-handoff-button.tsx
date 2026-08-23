@@ -28,7 +28,7 @@ export function UberHandoffButton({ actionId }: Props) {
 
   return (
     <button type="button" onClick={handleClick} disabled={busy}>
-      {busy ? "Opening Uber…" : "Open Uber"}
+      {busy ? "Opening Uber. You confirm the ride there." : "Open Uber with this trip"}
     </button>
   );
 }

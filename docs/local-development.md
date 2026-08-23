@@ -61,4 +61,14 @@ export GOOGLE_CLOUD_LOCATION="us-central1"
 export GOOGLE_GENAI_USE_VERTEXAI="true"
 ```
 
+## Phase 4 consented-call rehearsal
+
+1. Confirm the recipient is a team-owned or pre-consented number and the action has an unexpired call contract.
+2. Confirm the deployed public HTTPS callback URL and both Vapi and Twilio signatures with a fixture before placing a call.
+3. Approve the batch once, observe exactly one Vapi provider reference and one Firestore action transition to dispatched.
+4. Let the assistant state its identity and record a structured outcome. Do not give it payment or booking credentials.
+5. Replay the same callback fixture and confirm provider_events remains one record.
+6. Verify the Calendar event by read-back and open the Uber handoff only from the user-controlled button.
+7. Capture redacted Firestore action/audit evidence for Phase 5, never provider secrets or phone numbers.
+
 Use `FIRESTORE_LOCATION=asia-south1` for Relay. Cloud Run services run in `asia-south1`; Vertex AI remains in `us-central1`. See [Google Cloud agent access](gcloud-agent-access.md) for bootstrap, impersonation, and verification steps.

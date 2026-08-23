@@ -20,7 +20,7 @@ describe("UberHandoffButton", () => {
     Object.defineProperty(window, "location", { value: { assign }, writable: true });
     render(<UberHandoffButton actionId="ride-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /open uber/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Uber with this trip" }));
 
     await waitFor(() => expect(openUberHandoff).toHaveBeenCalledWith("ride-1"));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://m.uber.com/ul/?action=setPickup"));
