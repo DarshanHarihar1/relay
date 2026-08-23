@@ -129,13 +129,13 @@ paths:
           schema: { type: string, minLength: 1 }
       responses:
         "200":
-          description: Action
+          description: Safe action status
           headers:
             X-Correlation-ID:
               $ref: "#/components/headers/CorrelationId"
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ActionRecord" }
+              schema: { $ref: "#/components/schemas/ActionStatusResponse" }
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
   /v1/actions/{action_id}/open-handoff:

@@ -1,4 +1,4 @@
-// Generated from openapi/relay.yaml (sha256:daa53dfbf39da2273abf2964cf270ddd116bb84780006c47c3cee5474f53847d). Do not edit manually.
+// Generated from openapi/relay.yaml (sha256:ec8c18e8b0507aaad0aa329ed47c83d8775e0c181801b08d48ce6894219938ad). Do not edit manually.
 import { z } from "zod";
 
 export const actionStates = ["planned", "awaiting_approval", "authorized", "dispatched", "in_progress", "succeeded", "needs_user", "retryable_failure", "failed", "verified", "handoff_opened"] as const;

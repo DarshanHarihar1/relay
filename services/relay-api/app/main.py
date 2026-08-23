@@ -46,9 +46,10 @@ from .domain.product import (
     PlanTimelineItem,
     RegisterDeviceRequest,
 )
-from .routes.actions import router as actions_router
+from .routes.actions import get_action_repository, router as actions_router
 from .routes.google import pickup_router, router as google_router
 from .routes.pubsub import router as pubsub_router
+from .routes.product import router as product_router
 from .routes.repair_plans import CreateRepairPlanRequest, CreateRepairPlanResponse, router as repair_plans_router
 from .routes.webhooks import router as webhooks_router
 from .services.retention import RedactingLogFilter
@@ -87,6 +88,7 @@ app.include_router(actions_router)
 app.include_router(google_router)
 app.include_router(pickup_router)
 app.include_router(pubsub_router)
+app.include_router(product_router)
 app.include_router(repair_plans_router)
 app.include_router(action_dispatch_router)
 app.include_router(webhooks_router)
@@ -149,10 +151,22 @@ async def get_current_user(current_user: CurrentUser = Depends(require_current_u
     return current_user
 
 
-@app.get("/v1/actions/{action_id}", response_model=ActionRecord, responses={401: {"model": Problem}, 404: {"model": Problem}})
-async def get_action(action_id: str, current_user: CurrentUser = Depends(require_current_user)) -> ActionRecord:
-    del action_id, current_user
-    raise HTTPException(status_code=404)
+@app.get("/v1/actions/{action_id}", response_model=ActionStatusResponse, responses={401: {"model": Problem}, 404: {"model": Problem}})
+async def get_action(
+    action_id: str,
+    current_user: CurrentUser = Depends(require_current_user),
+    repository=Depends(get_action_repository),
+) -> ActionStatusResponse:
+    action = await repository.get(current_user.uid, action_id)
+    if action is None:
+        raise HTTPException(status_code=404)
+    return ActionStatusResponse(
+        action_id=action.id,
+        state=action.state,
+        retry_count=action.retry_count,
+        verification_evidence=action.verification_evidence,
+        correlation_id=action.correlation_id,
+    )
 
 
 def _openapi_models() -> list[type]:
