@@ -46,6 +46,10 @@ spec:
               value: Label_REPLACE_ME
             - name: GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT
               value: relay-api-sa@__PROJECT_ID__.iam.gserviceaccount.com
+            - name: RELAY_PUBLIC_BASE_URL
+              value: https://SERVICE_URL
+            - name: VAPI_SERVER_URL
+              value: https://SERVICE_URL/v1/webhooks/vapi
             - name: GOOGLE_OAUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:

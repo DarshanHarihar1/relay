@@ -46,3 +46,7 @@ spec:
                 secretKeyRef:
                   name: APP_ENCRYPTION_KEY
                   key: latest
+            - name: RELAY_PUBLIC_BASE_URL
+              value: https://SERVICE_URL
+            - name: VAPI_SERVER_URL
+              value: https://SERVICE_URL/v1/webhooks/vapi

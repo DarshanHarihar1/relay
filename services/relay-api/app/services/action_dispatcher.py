@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 
-from app.contracts import ActionRecord, JsonValue
+from app.contracts import ActionRecord, CallContract, JsonValue
+from app.providers.base import VoiceAdapter
 from app.repositories.actions import ActionRepository
 from app.services.retry_policy import ProviderFailure, RetryDecision, RetryPolicy
 
@@ -17,6 +18,24 @@ class ProviderAttempt:
 
 class ActionExecutor(Protocol):
     async def execute(self, action: ActionRecord) -> ProviderAttempt: ...
+
+
+class VoiceCallExecutor:
+    def __init__(self, adapter: VoiceAdapter) -> None:
+        self._adapter = adapter
+
+    async def execute(self, action: ActionRecord) -> ProviderAttempt:
+        if action.type != "voice_call":
+            raise ValueError("VoiceCallExecutor only accepts voice_call actions")
+        snapshot = action.authorization_snapshot
+        contract = CallContract.model_validate(
+            {
+                **snapshot.model_dump(mode="python"),
+                "action_id": action.id,
+            }
+        )
+        reference = await self._adapter.create_call(contract, idempotency_key=action.idempotency_key)
+        return ProviderAttempt(provider_ref=reference.provider_ref, evidence={"provider": "vapi"})
 
 
 class ActionDispatcher:
@@ -90,4 +109,4 @@ class ActionDispatcher:
         )
 
 
-__all__ = ["ActionDispatcher", "ActionExecutor", "ProviderAttempt"]
+__all__ = ["ActionDispatcher", "ActionExecutor", "ProviderAttempt", "VoiceCallExecutor"]
