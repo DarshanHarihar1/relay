@@ -5,6 +5,7 @@ from typing import Protocol
 
 from google.api_core.exceptions import AlreadyExists
 from google.cloud.firestore_v1 import AsyncClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.contracts import Commitment, Disruption
 from app.repositories.firestore import as_aware_datetimes, firestore_data, user_document
@@ -37,8 +38,8 @@ class FirestoreDisruptionRepository:
     ) -> list[Commitment]:
         query = (
             self._client.collection(f"users/{user_id}/commitments")
-            .where("starts_at", ">=", start)
-            .where("starts_at", "<=", end)
+            .where(filter=FieldFilter("starts_at", ">=", start))
+            .where(filter=FieldFilter("starts_at", "<=", end))
         )
         return [
             Commitment.model_validate(as_aware_datetimes(snapshot.to_dict()))

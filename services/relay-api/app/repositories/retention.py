@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from google.cloud.firestore_v1 import AsyncClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.contracts import AuditLogEntry
 from app.repositories.firestore import firestore_data, user_document
@@ -50,7 +51,9 @@ class FirestoreRetentionStore:
         await document.create(firestore_data(event))
 
     async def _delete_before(self, collection: str, cutoff: datetime | None) -> int:
-        query = self._client.collection_group(collection).where("created_at", "<", cutoff)
+        query = self._client.collection_group(collection).where(
+            filter=FieldFilter("created_at", "<", cutoff)
+        )
         deleted = 0
         async for snapshot in query.stream():
             await snapshot.reference.delete()
@@ -58,7 +61,9 @@ class FirestoreRetentionStore:
         return deleted
 
     async def _strip_disruption_evidence(self, cutoff: datetime | None) -> int:
-        query = self._client.collection_group("disruptions").where("created_at", "<", cutoff)
+        query = self._client.collection_group("disruptions").where(
+            filter=FieldFilter("created_at", "<", cutoff)
+        )
         stripped = 0
         async for snapshot in query.stream():
             data = snapshot.to_dict() or {}
