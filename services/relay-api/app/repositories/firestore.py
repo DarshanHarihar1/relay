@@ -23,6 +23,7 @@ USER_COLLECTIONS = frozenset(
         "google_connections",
         "selected_contacts",
         "device_tokens",
+        "demo_seed",
         "gmail_claims",
     }
 )
