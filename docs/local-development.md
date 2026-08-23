@@ -24,6 +24,13 @@ gcloud beta emulators pubsub start --host-port=127.0.0.1:8085
 firebase emulators:start --only auth --project relay-local
 ```
 
+The emulator hosts above are the matching defaults in `.env.example`; keep
+`RELAY_ENV=local` while running against them.
+
+The deployment manifests read secrets only from Secret Manager. Use the secret
+names in `infra/gcp/secret-manifest.txt` with an approved injection process;
+do not add their values to this repository or `.env.local`.
+
 ## Google Cloud configuration
 
 Relay uses Vertex AI through application-default credentials. Do not commit a `.env` file, API key, access token, service-account JSON file, or local Google Cloud configuration.

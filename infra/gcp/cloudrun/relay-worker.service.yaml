@@ -1,0 +1,47 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: relay-worker
+  labels:
+    relay.dev/region: asia-south1
+  annotations:
+    run.googleapis.com/ingress: internal
+    run.googleapis.com/invoker-iam-disabled: "false"
+    relay.dev/pubsub-route: /internal/pubsub/relay-work
+spec:
+  template:
+    spec:
+      serviceAccountName: relay-worker-sa@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/relay/relay-worker:latest
+          env:
+            - name: VAPI_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: VAPI_PRIVATE_KEY
+                  key: latest
+            - name: VAPI_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: VAPI_WEBHOOK_SECRET
+                  key: latest
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: TWILIO_ACCOUNT_SID
+                  key: latest
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: TWILIO_AUTH_TOKEN
+                  key: latest
+            - name: TWILIO_PHONE_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: TWILIO_PHONE_NUMBER
+                  key: latest
+            - name: APP_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: APP_ENCRYPTION_KEY
+                  key: latest

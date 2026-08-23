@@ -1,0 +1,37 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: relay-api
+  labels:
+    relay.dev/region: asia-south1
+  annotations:
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+    run.googleapis.com/invoker-iam-disabled: "false"
+    relay.dev/pubsub-route: /internal/pubsub/gmail-events
+spec:
+  template:
+    spec:
+      serviceAccountName: relay-api-sa@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/relay/relay-api:latest
+          env:
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: GEMINI_API_KEY
+                  key: latest
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: GOOGLE_OAUTH_CLIENT_SECRET
+                  key: latest
+            - name: MAPS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: MAPS_API_KEY
+                  key: latest
+            - name: APP_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: APP_ENCRYPTION_KEY
+                  key: latest
