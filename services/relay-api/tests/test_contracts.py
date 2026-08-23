@@ -94,6 +94,7 @@ def test_fastapi_openapi_declares_only_relay_contract_routes():
         "/v1/commitments/{commitment_id}/pickup-contact",
         "/v1/events/gmail",
         "/internal/maintenance/daily",
+        "/v1/disruptions/{disruption_id}/repair-plans",
     }
     assert "SourceEventEnvelope" in document["components"]["schemas"]
     assert "ride_booked" not in document["components"]["schemas"]["ActionState"]["enum"]

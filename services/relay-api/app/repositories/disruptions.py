@@ -20,6 +20,8 @@ class DisruptionRepository(Protocol):
         self, disruption: Disruption, *, assessment: AssessDisruption | None = None
     ) -> bool: ...
 
+    async def get_disruption(self, *, user_id: str, disruption_id: str) -> Disruption | None: ...
+
 
 class CommandPublisher(Protocol):
     async def publish(self, command: AssessDisruption) -> None: ...
@@ -68,6 +70,12 @@ class FirestoreDisruptionRepository:
             return True
 
         return await create(self._client.transaction())
+
+    async def get_disruption(self, *, user_id: str, disruption_id: str) -> Disruption | None:
+        snapshot = await self._client.document(user_document(user_id, "disruptions", disruption_id)).get()
+        if not snapshot.exists:
+            return None
+        return Disruption.model_validate(as_aware_datetimes(snapshot.to_dict()))
 
     async def list_commitments_in_window(
         self, *, user_id: str, start: datetime, end: datetime

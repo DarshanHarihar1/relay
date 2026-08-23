@@ -26,9 +26,11 @@ from .contracts import (
     ProviderEvent,
     SourceEventEnvelope,
 )
+from .domain.impact import PlanningOptions
 from .routes.actions import router as actions_router
 from .routes.google import pickup_router, router as google_router
 from .routes.pubsub import router as pubsub_router
+from .routes.repair_plans import CreateRepairPlanRequest, CreateRepairPlanResponse, router as repair_plans_router
 from .services.retention import RedactingLogFilter
 
 
@@ -63,6 +65,7 @@ app.include_router(actions_router)
 app.include_router(google_router)
 app.include_router(pickup_router)
 app.include_router(pubsub_router)
+app.include_router(repair_plans_router)
 
 
 def create_app() -> FastAPI:
@@ -134,9 +137,12 @@ def _openapi_models() -> list[type]:
         ApprovalDecisionRequest,
         ApprovalDecisionResponse,
         Commitment,
+        CreateRepairPlanRequest,
+        CreateRepairPlanResponse,
         Disruption,
         Edge,
         GmailEvidenceRef,
+        PlanningOptions,
         Problem,
         Provenance,
         ProviderEvent,
