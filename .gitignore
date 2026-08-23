@@ -1,0 +1,8 @@
+# Local Google Cloud tooling and credentials
+.env
+work/google-cloud-cli/
+work/gcloud-config/
+.gcloud/
+application_default_credentials.json
+*.service-account.json
+*.key.json
