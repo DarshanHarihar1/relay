@@ -132,7 +132,7 @@ async def complete_google_connection(
     except (GmailRetryableError, GmailTerminalError):
         # The account is connected. Watch registration is retried by renewal.
         logger.warning("gmail_watch_registration_deferred")
-    return RedirectResponse(location="/connections/google", status_code=303)
+    return RedirectResponse(url="/connections/google", status_code=303)
 
 
 @router.delete("/connection", status_code=204, response_class=Response)
