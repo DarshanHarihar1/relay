@@ -16,7 +16,7 @@ const statusCopy: Record<ActionOutcomeView["status"], string> = {
 export function ActionOutcomes({ outcomes }: { outcomes: readonly ActionOutcomeView[] }) {
   return (
     <section aria-labelledby="action-outcomes-heading">
-      <h2 id="action-outcomes-heading">Action outcomes</h2>
+      <h2 id="action-outcomes-heading" tabIndex={-1}>Action outcomes</h2>
       <ul aria-live="polite">
         {outcomes.map((outcome) => (
           <li key={outcome.action_id}>

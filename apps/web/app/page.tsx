@@ -5,7 +5,9 @@ import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type 
 
 import type { DashboardView } from "../../../packages/contracts/src";
 
+import { ApprovalBatchCard } from "../components/approval-batch-card";
 import { ActionOutcomes } from "../components/action-outcomes";
+import { PickupContactPrompt } from "../components/pickup-contact-prompt";
 import { PlanTimeline } from "../components/plan-timeline";
 import { getFirebaseAuth } from "../lib/firebase";
 import { useDashboard } from "../lib/dashboard";
@@ -66,15 +68,30 @@ function DashboardShell({ user }: { user: User }) {
           <button type="button" onClick={dashboard.refresh}>Try again</button>
         </aside>
       )}
-      {data !== null && <DashboardContent data={data} />}
+      {data !== null && <DashboardContent data={data} onRefresh={dashboard.refresh} />}
     </main>
   );
 }
 
-function DashboardContent({ data }: { data: DashboardView }) {
+function DashboardContent({ data, onRefresh }: { data: DashboardView; onRefresh: () => void }) {
   return (
     <>
       <PlanTimeline items={data.timeline} />
+      {data.timeline.filter((item) => item.is_pickup_prompt).map((item) => (
+        <PickupContactPrompt
+          key={item.commitment_id}
+          commitmentId={item.commitment_id}
+          version={item.pickup_version ?? 1}
+          onRefresh={onRefresh}
+        />
+      ))}
+      {data.approval !== null && (
+        <ApprovalBatchCard
+          approval={data.approval}
+          onRefresh={onRefresh}
+          onApproved={() => document.getElementById("action-outcomes-heading")?.focus()}
+        />
+      )}
       <ActionOutcomes outcomes={data.outcomes} />
     </>
   );
