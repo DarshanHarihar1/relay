@@ -1,0 +1,270 @@
+openapi: 3.1.0
+info:
+  title: Relay API
+  version: 0.1.0
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service health
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    const: ok
+  /v1/me:
+    get:
+      operationId: getCurrentUser
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Current authenticated user
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [uid, email]
+                properties:
+                  uid: { type: string, minLength: 1 }
+                  email: { type: [string, "null"] }
+        "401":
+          $ref: "#/components/responses/Problem"
+  /v1/actions/{action_id}:
+    get:
+      operationId: getAction
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Action
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionRecord" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /v1/approvals/{approval_id}/decision:
+    post:
+      operationId: decideApproval
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecisionRequest" }
+      responses:
+        "200":
+          description: Approval decision
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApprovalDecisionResponse" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
+  headers:
+    CorrelationId:
+      required: true
+      schema: { type: string, minLength: 1 }
+  responses:
+    Problem:
+      description: Safe API error
+      headers:
+        X-Correlation-ID:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    ActionState:
+      type: string
+      enum: [planned, awaiting_approval, authorized, dispatched, in_progress, succeeded, needs_user, retryable_failure, failed, verified, handoff_opened]
+    ActionType:
+      type: string
+      enum: [voice_call, calendar_hold, uber_deep_link]
+    VoiceCallAuthorizationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [type, goal, recipient_ref, identity_disclosure, authorized_options, max_fee_inr, must_not, required_evidence, expires_at]
+      properties:
+        type: { const: voice_call }
+        goal: { type: string, minLength: 1 }
+        recipient_ref: { type: string, minLength: 1 }
+        identity_disclosure: { type: string, minLength: 1 }
+        authorized_options:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        max_fee_inr: { type: integer, minimum: 1, maximum: 100000 }
+        must_not:
+          type: array
+          items: { type: string, minLength: 1 }
+        required_evidence:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        expires_at: { type: string, format: date-time }
+    CalendarHoldAuthorizationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [type, calendar_id, start_at, end_at, visibility]
+      properties:
+        type: { const: calendar_hold }
+        calendar_id: { type: string, minLength: 1 }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        visibility: { const: private }
+    UberDeepLinkAuthorizationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [type, pickup, destination, handoff_label]
+      properties:
+        type: { const: uber_deep_link }
+        pickup: { type: string, minLength: 1 }
+        destination: { type: string, minLength: 1 }
+        handoff_label: { const: "Open Uber" }
+    AuthorizationSnapshot:
+      oneOf:
+        - { $ref: "#/components/schemas/VoiceCallAuthorizationSnapshot" }
+        - { $ref: "#/components/schemas/CalendarHoldAuthorizationSnapshot" }
+        - { $ref: "#/components/schemas/UberDeepLinkAuthorizationSnapshot" }
+      discriminator: { propertyName: type }
+    ActionRecord:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, repair_plan_id, repair_plan_version, type, target_ref, idempotency_key, authorization_snapshot, state, retry_count, correlation_id, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        user_id: { type: string, minLength: 1 }
+        repair_plan_id: { type: string, minLength: 1 }
+        repair_plan_version: { type: integer, minimum: 1 }
+        type: { $ref: "#/components/schemas/ActionType" }
+        target_ref: { type: string, minLength: 1 }
+        idempotency_key: { type: string, minLength: 1 }
+        authorization_snapshot: { $ref: "#/components/schemas/AuthorizationSnapshot" }
+        provider_ref: { type: [string, "null"] }
+        state: { $ref: "#/components/schemas/ActionState" }
+        retry_count: { type: integer, minimum: 0 }
+        verification_evidence: { type: [object, "null"], additionalProperties: true }
+        correlation_id: { type: string, minLength: 1 }
+        expires_at: { type: [string, "null"], format: date-time }
+        dispatched_at: { type: [string, "null"], format: date-time }
+        version: { type: integer, minimum: 1 }
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, action_ids, state, version, correlation_id]
+      properties:
+        id: { type: string, minLength: 1 }
+        user_id: { type: string, minLength: 1 }
+        action_ids: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+        state: { type: string, enum: [pending, approved, declined] }
+        version: { type: integer, minimum: 1 }
+        correlation_id: { type: string, minLength: 1 }
+    ApprovalDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [approval_id, decision, expected_version]
+      properties:
+        approval_id: { type: string, minLength: 1 }
+        decision: { type: string, enum: [approve, decline] }
+        expected_version: { type: integer, minimum: 1 }
+    ApprovalDecisionResponse:
+      type: object
+      additionalProperties: false
+      required: [approval_id, state, action_ids]
+      properties:
+        approval_id: { type: string, minLength: 1 }
+        state: { type: string, enum: [approved, declined] }
+        action_ids: { type: array, items: { type: string, minLength: 1 } }
+    Commitment:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, source_event_key, summary, starts_at, ends_at]
+      properties:
+        id: { type: string, minLength: 1 }
+        user_id: { type: string, minLength: 1 }
+        source_event_key: { type: string, minLength: 1 }
+        summary: { type: string, minLength: 1 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+    Edge:
+      type: object
+      additionalProperties: false
+      required: [id, from_ref, to_ref, relation]
+      properties:
+        id: { type: string, minLength: 1 }
+        from_ref: { type: string, minLength: 1 }
+        to_ref: { type: string, minLength: 1 }
+        relation: { type: string, minLength: 1 }
+    Disruption:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, source_event_key, kind, occurred_at]
+      properties:
+        id: { type: string, minLength: 1 }
+        user_id: { type: string, minLength: 1 }
+        source_event_key: { type: string, minLength: 1 }
+        kind: { type: string, minLength: 1 }
+        occurred_at: { type: string, format: date-time }
+    ProviderEvent:
+      type: object
+      additionalProperties: false
+      required: [id, action_id, provider, provider_event_key, occurred_at, correlation_id]
+      properties:
+        id: { type: string, minLength: 1 }
+        action_id: { type: string, minLength: 1 }
+        provider: { type: string, enum: [vapi, calendar, uber] }
+        provider_event_key: { type: string, minLength: 1 }
+        occurred_at: { type: string, format: date-time }
+        correlation_id: { type: string, minLength: 1 }
+    SourceEventEnvelope:
+      type: object
+      additionalProperties: false
+      required: [source, source_event_key, occurred_at, payload, correlation_id]
+      properties:
+        source: { type: string, enum: [gmail, calendar, vapi] }
+        source_event_key: { type: string, minLength: 1 }
+        occurred_at: { type: string, format: date-time }
+        payload: { type: object, additionalProperties: true }
+        correlation_id: { type: string, minLength: 1 }
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [code, message, correlation_id]
+      properties:
+        code: { type: string, minLength: 1 }
+        message: { type: string, minLength: 1 }
+        correlation_id: { type: string, minLength: 1 }
