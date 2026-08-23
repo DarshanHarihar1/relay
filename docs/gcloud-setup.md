@@ -45,7 +45,7 @@ Run this from the repository root. `GOOGLE_CLOUD_REGION` is used for regional re
 export GOOGLE_CLOUD_PROJECT="massive-dynamo-302008"
 export GOOGLE_CLOUD_REGION="asia-south1"
 export GOOGLE_CLOUD_LOCATION="us-central1"
-export CLOUDSDK_CONFIG="$PWD/work/gcloud-config"
+export CLOUDSDK_CONFIG="$(cd .. && pwd)/work/gcloud-config"
 export GOOGLE_GENAI_USE_VERTEXAI="true"
 
 # Use this only when gcloud is installed inside the repository workspace.
@@ -54,6 +54,11 @@ export RELAY_GCLOUD_BIN="${RELAY_GCLOUD_BIN:-gcloud}"
 mkdir -p "$CLOUDSDK_CONFIG"
 "$RELAY_GCLOUD_BIN" config set project "$GOOGLE_CLOUD_PROJECT"
 "$RELAY_GCLOUD_BIN" config set compute/region "$GOOGLE_CLOUD_REGION"
+
+# Confirm both landed. `compute/region` unset is a common cause of a later
+# deploy defaulting to the wrong region.
+"$RELAY_GCLOUD_BIN" config get-value project
+"$RELAY_GCLOUD_BIN" config get-value compute/region
 ```
 
 For a different project, replace the values before running any create or enable command. Do not blindly reuse the Firestore region from another project.
@@ -231,6 +236,11 @@ The first command should be reviewed before removing `--dry-run`. The second sho
 The emulator is useful for tests and does not require production Firestore access. Install the emulator component through the Cloud SDK, ensure a supported Java runtime is available, then start it on a local-only port:
 
 ```bash
+# The emulator needs a Java runtime on PATH. If the workspace has a local JDK,
+# point JAVA_HOME at it first.
+export JAVA_HOME="$(cd .. && pwd)/work/temurin/jdk-21.0.12.1+1/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+
 "$RELAY_GCLOUD_BIN" components install cloud-firestore-emulator
 "$RELAY_GCLOUD_BIN" emulators firestore start \
   --project="$GOOGLE_CLOUD_PROJECT" \
@@ -256,7 +266,7 @@ Install the CLI or set `RELAY_GCLOUD_BIN` to the full path of the local executab
 Set `CLOUDSDK_CONFIG` to a writable, ignored path before running any auth command:
 
 ```bash
-export CLOUDSDK_CONFIG="$PWD/work/gcloud-config"
+export CLOUDSDK_CONFIG="$(cd .. && pwd)/work/gcloud-config"
 mkdir -p "$CLOUDSDK_CONFIG"
 ```
 

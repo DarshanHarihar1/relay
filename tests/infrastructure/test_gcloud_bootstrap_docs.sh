@@ -60,7 +60,7 @@ if [[ -f "$bootstrap" ]]; then
     grep -Fq 'Proposed bindings:' <<<"$dry_run_output" || fail 'dry run does not list proposed bindings'
     grep -Fq 'relay-dev-agent -> roles/viewer' <<<"$dry_run_output" || fail 'dry run omits the development agent binding'
     grep -Fq 'active bootstrap principal -> relay-dev-agent (roles/iam.serviceAccountTokenCreator)' <<<"$dry_run_output" || fail 'dry run omits the developer impersonation binding'
-    grep -Fq 'relay-deployer -> relay-api (roles/iam.serviceAccountUser)' <<<"$dry_run_output" || fail 'dry run omits the deployer service-account binding'
+    grep -Fq 'relay-deployer -> relay-api-sa (roles/iam.serviceAccountUser)' <<<"$dry_run_output" || fail 'dry run omits the deployer service-account binding'
   else
     fail 'dry run failed before it could report the planned bindings'
   fi

@@ -33,6 +33,13 @@ jobs:
       - run: pnpm lint
       - run: pnpm test:web
 
+  infrastructure:
+    needs: contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/infrastructure/test_gcloud_bootstrap_docs.sh
+
   api:
     needs: contracts
     runs-on: ubuntu-latest
