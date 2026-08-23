@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -55,6 +56,7 @@ from .routes.pubsub import router as pubsub_router
 from .routes.product import router as product_router
 from .routes.repair_plans import CreateRepairPlanRequest, CreateRepairPlanResponse, router as repair_plans_router
 from .routes.webhooks import router as webhooks_router
+from .observability import RelayLogEvent, classify_exception, log_event
 from .services.retention import RedactingLogFilter
 from .workers.action_dispatch import router as action_dispatch_router
 from .workers.reconcile_actions import router as reconcile_actions_router
@@ -64,8 +66,40 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         correlation_id = request.headers.get("X-Correlation-ID") or str(uuid4())
         request.state.correlation_id = correlation_id
-        response = await call_next(request)
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception as error:
+            log_event(
+                RelayLogEvent(
+                    event="request_completed",
+                    severity="ERROR",
+                    correlation_id=correlation_id,
+                    user_id_hash=None,
+                    action_id=None,
+                    approval_id=None,
+                    provider="none",
+                    outcome=classify_exception(error),
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                ),
+                method=request.method,
+            )
+            raise
         response.headers["X-Correlation-ID"] = correlation_id
+        log_event(
+            RelayLogEvent(
+                event="request_completed",
+                severity="INFO" if response.status_code < 500 else "ERROR",
+                correlation_id=correlation_id,
+                user_id_hash=None,
+                action_id=None,
+                approval_id=None,
+                provider="none",
+                outcome=str(response.status_code),
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            ),
+            method=request.method,
+        )
         return response
 
 

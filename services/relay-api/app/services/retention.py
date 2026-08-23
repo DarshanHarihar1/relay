@@ -48,6 +48,9 @@ REDACTED_FIELDS = frozenset(
         "text_body",
         "body",
         "evidence_excerpt",
+        "transcript",
+        "recording",
+        "message_body",
         "subject",
         "from_address",
         "email_address",
@@ -131,12 +134,21 @@ def redact_log_fields(fields: Any) -> Any:
     """Replace every sensitive value before it can reach a log or an audit."""
     if isinstance(fields, dict):
         return {
-            name: REDACTED if name in REDACTED_FIELDS else redact_log_fields(value)
+            name: REDACTED if _is_redacted_field(name) else redact_log_fields(value)
             for name, value in fields.items()
         }
     if isinstance(fields, (list, tuple)):
         return [redact_log_fields(item) for item in fields]
     return fields
+
+
+def _is_redacted_field(name: object) -> bool:
+    if not isinstance(name, str):
+        return False
+    lowered = name.lower()
+    return lowered in {field.lower() for field in REDACTED_FIELDS} or lowered.endswith(
+        ("_secret", "_key", "_token")
+    )
 
 
 __all__ = [

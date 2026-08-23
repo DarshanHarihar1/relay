@@ -1,0 +1,40 @@
+# Cloud Monitoring policy inputs. Bind notification channels and replace the
+# project-specific metric names during deployment; this file contains no
+# credentials or private user data.
+policies:
+  - display_name: relay-webhook-signature-failure
+    combiner: OR
+    conditions:
+      - display_name: any webhook signature failure
+        condition_threshold:
+          filter: metric.type="logging.googleapis.com/user/relay/webhook_signature_failures"
+          comparison: COMPARISON_GT
+          threshold_value: 0
+          duration: 0s
+  - display_name: relay-action-dispatch-or-verification-errors
+    combiner: OR
+    conditions:
+      - display_name: action error rate above five percent
+        condition_threshold:
+          filter: metric.type="logging.googleapis.com/user/relay/action_errors"
+          comparison: COMPARISON_GT
+          threshold_value: 0.05
+          duration: 300s
+  - display_name: relay-dead-letter-work
+    combiner: OR
+    conditions:
+      - display_name: dead-letter count above zero
+        condition_threshold:
+          filter: metric.type="logging.googleapis.com/user/relay/dead_letter_work"
+          comparison: COMPARISON_GT
+          threshold_value: 0
+          duration: 0s
+  - display_name: relay-approved-voice-action-stuck
+    combiner: OR
+    conditions:
+      - display_name: approved voice action lacks terminal state
+        condition_threshold:
+          filter: metric.type="logging.googleapis.com/user/relay/approved_voice_action_age_seconds"
+          comparison: COMPARISON_GT
+          threshold_value: 180
+          duration: 0s

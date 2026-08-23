@@ -42,19 +42,27 @@ _SENSITIVE_KEYS = {
     "access_token",
     "id_token",
     "provider_ref",
+    "transcript",
+    "recording",
+    "message_body",
+    "evidence_excerpt",
 }
+_SENSITIVE_SUFFIXES = ("_secret", "_key", "_token")
 
 
-def redact_for_log(value: Mapping[str, Any]) -> dict[str, Any]:
-    def redact(mapping: Mapping[str, Any]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, item in mapping.items():
-            if key.lower() in _SENSITIVE_KEYS or key.lower().endswith(("_secret", "_key")):
-                result[key] = "[REDACTED]"
-            elif isinstance(item, Mapping):
-                result[key] = redact(item)
-            else:
-                result[key] = item
-        return result
+def redact_for_log(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            key: "[REDACTED]"
+            if isinstance(key, str) and _is_sensitive_key(key)
+            else redact_for_log(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [redact_for_log(item) for item in value]
+    return value
 
-    return redact(value)
+
+def _is_sensitive_key(key: str) -> bool:
+    lowered = key.lower()
+    return lowered in _SENSITIVE_KEYS or lowered.endswith(_SENSITIVE_SUFFIXES)

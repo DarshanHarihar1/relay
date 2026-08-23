@@ -19,6 +19,22 @@ def test_redact_for_log_removes_token_and_secret_suffixes():
     assert redacted == {"authorization": "[REDACTED]", "nested": {"api_key": "[REDACTED]"}, "safe": "ok"}
 
 
+def test_redact_for_log_recurses_through_lists_and_token_suffixes():
+    redacted = redact_for_log(
+        {
+            "items": [{"transcript": "private words"}],
+            "refresh_token": "private-token",
+            "safe": "ok",
+        }
+    )
+
+    assert redacted == {
+        "items": [{"transcript": "[REDACTED]"}],
+        "refresh_token": "[REDACTED]",
+        "safe": "ok",
+    }
+
+
 def test_field_cipher_encrypts_and_decrypts_ciphertext():
     cipher = FernetFieldCipher(FernetFieldCipher.generate_key())
 
