@@ -20,7 +20,7 @@ readonly PUBSUB_SERVICE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserv
 readonly DEAD_LETTER_TOPIC='relay-dead-letter'
 readonly RETRY_POLICY='--min-retry-delay=10s --max-retry-delay=600s'
 
-for topic in gmail-events relay-work relay-action-work relay-retry "$DEAD_LETTER_TOPIC"; do
+for topic in gmail-events relay-work relay-action-work relay-reconcile relay-retry "$DEAD_LETTER_TOPIC"; do
   if ! gcloud pubsub topics describe "$topic" --project="$project_id" >/dev/null 2>&1; then
     gcloud pubsub topics create "$topic" --project="$project_id" --quiet
   fi
@@ -41,6 +41,18 @@ gcloud pubsub topics add-iam-policy-binding relay-work \
 gcloud pubsub topics add-iam-policy-binding relay-action-work \
   --project="$project_id" \
   --member="serviceAccount:${API_SERVICE_ACCOUNT}" \
+  --role='roles/pubsub.publisher' \
+  --quiet >/dev/null
+
+gcloud pubsub topics add-iam-policy-binding relay-action-work \
+  --project="$project_id" \
+  --member="serviceAccount:${WORKER_SERVICE_ACCOUNT}" \
+  --role='roles/pubsub.publisher' \
+  --quiet >/dev/null
+
+gcloud pubsub topics add-iam-policy-binding relay-reconcile \
+  --project="$project_id" \
+  --member="serviceAccount:${WORKER_SERVICE_ACCOUNT}" \
   --role='roles/pubsub.publisher' \
   --quiet >/dev/null
 
@@ -88,6 +100,7 @@ ensure_processing_subscription() {
 ensure_processing_subscription gmail-events-api gmail-events
 ensure_processing_subscription relay-work-worker relay-work
 ensure_processing_subscription relay-action-work-worker relay-action-work
+ensure_processing_subscription relay-reconcile-worker relay-reconcile
 ensure_processing_subscription relay-retry-worker relay-retry
 
 if ! gcloud pubsub subscriptions describe relay-dead-letter-operator --project="$project_id" >/dev/null 2>&1; then
@@ -129,6 +142,7 @@ fi
 if gcloud run services describe relay-worker --project="$project_id" --region="$region" >/dev/null 2>&1; then
   configure_push_subscription relay-work-worker relay-worker /internal/pubsub/relay-work "$WORKER_SERVICE_ACCOUNT"
   configure_push_subscription relay-action-work-worker relay-worker /internal/pubsub/relay-action-work "$WORKER_SERVICE_ACCOUNT"
+  configure_push_subscription relay-reconcile-worker relay-worker /internal/pubsub/relay-reconcile "$WORKER_SERVICE_ACCOUNT"
   configure_push_subscription relay-retry-worker relay-worker /internal/pubsub/relay-retry "$WORKER_SERVICE_ACCOUNT"
 else
   printf 'Deploy relay-worker, then rerun this script to configure its private push routes.\n' >&2
@@ -166,6 +180,29 @@ configure_daily_maintenance() {
 
 if ! configure_daily_maintenance; then
   printf 'Deploy relay-api, then rerun this script to schedule daily retention cleanup.\n' >&2
+fi
+
+configure_reconciliation_schedule() {
+  gcloud scheduler jobs describe relay-reconciliation-tick \
+    --project="$project_id" --location="$region" >/dev/null 2>&1 \
+    && gcloud scheduler jobs update pubsub relay-reconciliation-tick \
+      --project="$project_id" \
+      --location="$region" \
+      --schedule='*/5 * * * *' \
+      --topic="projects/${project_id}/topics/relay-reconcile" \
+      --message-body='{"tick":true}' \
+      --quiet \
+    || gcloud scheduler jobs create pubsub relay-reconciliation-tick \
+      --project="$project_id" \
+      --location="$region" \
+      --schedule='*/5 * * * *' \
+      --topic="projects/${project_id}/topics/relay-reconcile" \
+      --message-body='{"tick":true}' \
+      --quiet
+}
+
+if ! configure_reconciliation_schedule; then
+  printf 'Unable to configure the five-minute reconciliation schedule.\n' >&2
 fi
 
 printf 'Pub/Sub topics and processing subscriptions are configured for %s.\n' "$project_id"

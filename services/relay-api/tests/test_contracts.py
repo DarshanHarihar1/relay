@@ -96,6 +96,7 @@ def test_fastapi_openapi_declares_only_relay_contract_routes():
         "/v1/events/gmail",
             "/internal/maintenance/daily",
             "/internal/pubsub/relay-action-work",
+            "/internal/pubsub/relay-reconcile",
             "/v1/webhooks/vapi",
             "/v1/webhooks/twilio",
             "/v1/disruptions/{disruption_id}/repair-plans",

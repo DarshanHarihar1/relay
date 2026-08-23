@@ -41,6 +41,7 @@ from .routes.repair_plans import CreateRepairPlanRequest, CreateRepairPlanRespon
 from .routes.webhooks import router as webhooks_router
 from .services.retention import RedactingLogFilter
 from .workers.action_dispatch import router as action_dispatch_router
+from .workers.reconcile_actions import router as reconcile_actions_router
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -77,6 +78,7 @@ app.include_router(pubsub_router)
 app.include_router(repair_plans_router)
 app.include_router(action_dispatch_router)
 app.include_router(webhooks_router)
+app.include_router(reconcile_actions_router)
 
 
 def create_app() -> FastAPI:

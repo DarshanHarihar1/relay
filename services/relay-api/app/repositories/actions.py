@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from google.cloud.firestore_v1 import AsyncClient
@@ -78,6 +78,10 @@ class ActionRepository(Protocol):
     async def complete_dispatch_record(self, user_id: str, action_id: str, correlation_id: str) -> None: ...
 
     async def list_pending_dispatches(self, user_id: str, limit: int) -> list[str]: ...
+
+    async def list_actions_requiring_reconciliation(
+        self, now: datetime, limit: int
+    ) -> list[ActionRecord]: ...
 
     async def record_dispatch_failure(
         self,
@@ -571,3 +575,26 @@ class FirestoreActionRepository:
             snapshot.id
             async for snapshot in query.stream()
         ]
+
+    async def list_actions_requiring_reconciliation(
+        self, now: datetime, limit: int
+    ) -> list[ActionRecord]:
+        query = self._client.collection_group("actions").limit(limit * 4)
+        stale_before = now - timedelta(minutes=5)
+        results: list[ActionRecord] = []
+        async for snapshot in query.stream():
+            action = ActionRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            if action.state not in {
+                ActionState.DISPATCHED,
+                ActionState.IN_PROGRESS,
+                ActionState.SUCCEEDED,
+                ActionState.RETRYABLE_FAILURE,
+            }:
+                continue
+            if action.updated_at <= stale_before or (
+                action.expires_at is not None and action.expires_at <= now
+            ):
+                results.append(action)
+            if len(results) >= limit:
+                break
+        return results

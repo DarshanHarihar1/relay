@@ -8,6 +8,7 @@ metadata:
     run.googleapis.com/invoker-iam-disabled: "false"
     relay.dev/pubsub-route: /internal/pubsub/relay-work
     relay.dev/action-pubsub-route: /internal/pubsub/relay-action-work
+    relay.dev/reconcile-pubsub-route: /internal/pubsub/relay-reconcile
     relay.dev/maintenance-route: /internal/maintenance/daily
 spec:
   template:

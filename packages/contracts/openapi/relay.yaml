@@ -112,6 +112,12 @@ paths:
       responses:
         "204":
           description: Action work accepted
+  /internal/pubsub/relay-reconcile:
+    post:
+      operationId: receiveReconcileTick
+      responses:
+        "204":
+          description: Reconciliation tick accepted
   /v1/webhooks/vapi:
     post:
       operationId: receiveVapiWebhook
