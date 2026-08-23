@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date as Date, datetime, time as Time, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Literal
 
@@ -30,6 +31,35 @@ class ActionState(str, Enum):
     FAILED = "failed"
     VERIFIED = "verified"
     HANDOFF_OPENED = "handoff_opened"
+
+
+class ApprovalDecision(str, Enum):
+    APPROVE = "approve"
+    DECLINE = "decline"
+
+
+class ProviderKind(str, Enum):
+    VAPI = "vapi"
+    TWILIO = "twilio"
+    GOOGLE_CALENDAR = "calendar"
+    UBER = "uber"
+
+
+class CallGoal(str, Enum):
+    CONFIRM_FRIEND_PICKUP = "confirm_friend_pickup"
+    RESCHEDULE_RESTAURANT_RESERVATION = "reschedule_restaurant_reservation"
+    CONFIRM_HOTEL_TIMING = "confirm_hotel_timing"
+
+
+class CallOutcomeKind(str, Enum):
+    CONFIRMED = "confirmed"
+    DECLINED = "declined"
+    NO_ANSWER = "no_answer"
+    VOICEMAIL = "voicemail"
+    TRANSFER_REQUESTED = "transfer_requested"
+    CONTRADICTION = "contradiction"
+    UNEXPECTED_FEE = "unexpected_fee"
+    PROVIDER_ERROR = "provider_error"
 
 
 def _aware_datetime(value: datetime) -> datetime:
@@ -136,6 +166,114 @@ class ApprovalDecisionResponse(ContractModel):
     action_ids: list[NonEmptyString]
 
 
+class CallContract(ContractModel):
+    action_id: NonEmptyString
+    # Phase 3 stores this as a bounded descriptive string rather than one of
+    # the plan's three example goals. Preserve the persisted value verbatim.
+    goal: NonEmptyString
+    recipient_ref: NonEmptyString
+    identity_disclosure: NonEmptyString
+    authorized_options: list[NonEmptyString] = Field(min_length=1, max_length=3)
+    max_fee_inr: Literal[0]
+    must_not: set[NonEmptyString]
+    required_evidence: set[NonEmptyString]
+    expires_at: AwareDatetime
+
+
+class RecordCallOutcomeInput(ContractModel):
+    action_id: NonEmptyString
+    outcome: CallOutcomeKind
+    venue: NonEmptyString | None = None
+    date: Date | None = None
+    party_size: int | None = Field(default=None, ge=1, le=20)
+    confirmed_time: Time | None = None
+    fee_inr: Decimal | None = Field(default=None, ge=0)
+    requested_transfer: bool = False
+    redacted_excerpt: str | None = Field(default=None, max_length=280)
+
+
+class OutcomeValidation(ContractModel):
+    state: ActionState
+    reason: NonEmptyString
+    missing_evidence: list[NonEmptyString] = Field(default_factory=list)
+
+
+class ActionStatusResponse(ContractModel):
+    action_id: NonEmptyString
+    state: ActionState
+    retry_count: int = Field(ge=0)
+    verification_evidence: dict[str, JsonValue] | None = None
+    correlation_id: NonEmptyString
+
+
+class HandoffResponse(ContractModel):
+    action_id: NonEmptyString
+    state: Literal["handoff_opened"]
+    url: NonEmptyString
+
+
+def _outcome_reason(kind: CallOutcomeKind) -> str:
+    return f"outcome_{kind.value}"
+
+
+def _authorized_times(options: set[str]) -> set[Time]:
+    parsed: set[Time] = set()
+    for option in options:
+        try:
+            parsed.add(Time.fromisoformat(option))
+        except ValueError:
+            continue
+    return parsed
+
+
+def validate_call_outcome(
+    contract: CallContract,
+    outcome: RecordCallOutcomeInput,
+    *,
+    now: datetime | None = None,
+) -> OutcomeValidation:
+    """Validate a structured voice result against the immutable call bounds."""
+    check_at = now or datetime.now(timezone.utc)
+    if outcome.action_id != contract.action_id:
+        return OutcomeValidation(state=ActionState.NEEDS_USER, reason="action_id_mismatch")
+    if check_at >= contract.expires_at:
+        return OutcomeValidation(state=ActionState.NEEDS_USER, reason="authorization_expired")
+    if outcome.fee_inr is not None and outcome.fee_inr > 0:
+        return OutcomeValidation(state=ActionState.NEEDS_USER, reason="unexpected_fee")
+    if outcome.outcome is not CallOutcomeKind.CONFIRMED:
+        return OutcomeValidation(state=ActionState.NEEDS_USER, reason=_outcome_reason(outcome.outcome))
+    if outcome.requested_transfer:
+        return OutcomeValidation(state=ActionState.NEEDS_USER, reason="transfer_requested")
+
+    values: dict[str, object | None] = {
+        "venue": outcome.venue,
+        "date": outcome.date,
+        "party_size": outcome.party_size,
+        "confirmed_time": outcome.confirmed_time,
+    }
+    missing = sorted(
+        evidence
+        for evidence in contract.required_evidence
+        if evidence not in values or values[evidence] is None
+    )
+    if missing:
+        return OutcomeValidation(
+            state=ActionState.NEEDS_USER,
+            reason="missing_required_evidence",
+            missing_evidence=missing,
+        )
+
+    if outcome.confirmed_time is not None:
+        allowed_times = _authorized_times(set(contract.authorized_options))
+        if not allowed_times:
+            return OutcomeValidation(state=ActionState.NEEDS_USER, reason="unbounded_confirmed_time")
+        normalized_time = outcome.confirmed_time.replace(microsecond=0)
+        if normalized_time not in allowed_times:
+            return OutcomeValidation(state=ActionState.NEEDS_USER, reason="unlisted_confirmed_time")
+
+    return OutcomeValidation(state=ActionState.SUCCEEDED, reason="confirmed_within_bounds")
+
+
 class Commitment(ContractModel):
     id: NonEmptyString
     user_id: NonEmptyString
@@ -227,8 +365,11 @@ class Disruption(ContractModel):
 class ProviderEvent(ContractModel):
     id: NonEmptyString
     action_id: NonEmptyString
-    provider: Literal["vapi", "calendar", "uber"]
+    provider: Literal["vapi", "twilio", "calendar", "uber"]
     provider_event_key: NonEmptyString
+    event_type: NonEmptyString | None = None
+    provider_ref: NonEmptyString | None = None
+    payload_hash: NonEmptyString | None = None
     occurred_at: AwareDatetime
     correlation_id: NonEmptyString
     created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -247,6 +388,7 @@ class SourceEventEnvelope(ContractModel):
 class DispatchClaim(ContractModel):
     claimed: bool
     action: ActionRecord | None = None
+    reconciliation_required: bool = False
 
 
 class AuditLogEntry(ContractModel):

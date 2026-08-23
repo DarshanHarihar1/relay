@@ -33,7 +33,11 @@ ALLOWED_TRANSITIONS: dict[ActionState, set[ActionState]] = {
         ActionState.NEEDS_USER,
         ActionState.FAILED,
     },
-    ActionState.SUCCEEDED: {ActionState.VERIFIED, ActionState.NEEDS_USER},
+    ActionState.SUCCEEDED: {
+        ActionState.VERIFIED,
+        ActionState.NEEDS_USER,
+        ActionState.RETRYABLE_FAILURE,
+    },
     ActionState.RETRYABLE_FAILURE: {
         ActionState.DISPATCHED,
         ActionState.NEEDS_USER,

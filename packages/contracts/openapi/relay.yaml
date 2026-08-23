@@ -114,6 +114,12 @@ components:
     ActionType:
       type: string
       enum: [voice_call, calendar_hold, uber_deep_link]
+    CallOutcomeKind:
+      type: string
+      enum: [confirmed, declined, no_answer, voicemail, transfer_requested, contradiction, unexpected_fee, provider_error]
+    ProviderKind:
+      type: string
+      enum: [vapi, twilio, calendar, uber]
     VoiceCallAuthorizationSnapshot:
       type: object
       additionalProperties: false
@@ -127,7 +133,7 @@ components:
           type: array
           minItems: 1
           items: { type: string, minLength: 1 }
-        max_fee_inr: { type: integer, minimum: 1, maximum: 100000 }
+        max_fee_inr: { type: integer, const: 0 }
         must_not:
           type: array
           items: { type: string, minLength: 1 }
@@ -161,6 +167,69 @@ components:
         - { $ref: "#/components/schemas/CalendarHoldAuthorizationSnapshot" }
         - { $ref: "#/components/schemas/UberDeepLinkAuthorizationSnapshot" }
       discriminator: { propertyName: type }
+    CallContract:
+      type: object
+      additionalProperties: false
+      required: [action_id, goal, recipient_ref, identity_disclosure, authorized_options, max_fee_inr, must_not, required_evidence, expires_at]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        goal: { type: string, minLength: 1 }
+        recipient_ref: { type: string, minLength: 1 }
+        identity_disclosure: { type: string, minLength: 1 }
+        authorized_options: { type: array, minItems: 1, maxItems: 3, items: { type: string, minLength: 1 } }
+        max_fee_inr: { type: integer, const: 0 }
+        must_not: { type: array, items: { type: string, minLength: 1 } }
+        required_evidence: { type: array, items: { type: string, minLength: 1 } }
+        expires_at: { type: string, format: date-time }
+    RecordCallOutcomeInput:
+      type: object
+      additionalProperties: false
+      required: [action_id, outcome, requested_transfer]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        outcome: { $ref: "#/components/schemas/CallOutcomeKind" }
+        venue: { type: [string, "null"] }
+        date: { type: [string, "null"], format: date }
+        party_size: { type: [integer, "null"], minimum: 1, maximum: 20 }
+        confirmed_time: { type: [string, "null"], format: time }
+        fee_inr: { type: [number, "null"], minimum: 0 }
+        requested_transfer: { type: boolean, default: false }
+        redacted_excerpt: { type: [string, "null"], maxLength: 280 }
+    OutcomeValidation:
+      type: object
+      additionalProperties: false
+      required: [state, reason, missing_evidence]
+      properties:
+        state: { $ref: "#/components/schemas/ActionState" }
+        reason: { type: string, minLength: 1 }
+        missing_evidence: { type: array, items: { type: string, minLength: 1 } }
+    DispatchClaim:
+      type: object
+      additionalProperties: false
+      required: [claimed, reconciliation_required]
+      properties:
+        claimed: { type: boolean }
+        action: { anyOf: [{ $ref: "#/components/schemas/ActionRecord" }, { type: "null" }] }
+        idempotency_key: { type: [string, "null"] }
+        reconciliation_required: { type: boolean, default: false }
+    ActionStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [action_id, state, retry_count, correlation_id]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        state: { $ref: "#/components/schemas/ActionState" }
+        retry_count: { type: integer, minimum: 0 }
+        verification_evidence: { type: [object, "null"], additionalProperties: true }
+        correlation_id: { type: string, minLength: 1 }
+    HandoffResponse:
+      type: object
+      additionalProperties: false
+      required: [action_id, state, url]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        state: { const: handoff_opened }
+        url: { type: string, minLength: 1, format: uri }
     ActionRecord:
       type: object
       additionalProperties: false
@@ -246,8 +315,11 @@ components:
       properties:
         id: { type: string, minLength: 1 }
         action_id: { type: string, minLength: 1 }
-        provider: { type: string, enum: [vapi, calendar, uber] }
+        provider: { type: string, enum: [vapi, twilio, calendar, uber] }
         provider_event_key: { type: string, minLength: 1 }
+        event_type: { type: [string, "null"] }
+        provider_ref: { type: [string, "null"] }
+        payload_hash: { type: [string, "null"] }
         occurred_at: { type: string, format: date-time }
         correlation_id: { type: string, minLength: 1 }
     SourceEventEnvelope:

@@ -14,16 +14,22 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .auth import CurrentUser, require_current_user
 from .contracts import (
     ActionRecord,
+    ActionStatusResponse,
     Approval,
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
+    CallContract,
     Commitment,
+    DispatchClaim,
     Disruption,
     Edge,
     GmailEvidenceRef,
+    HandoffResponse,
+    OutcomeValidation,
     Problem,
     Provenance,
     ProviderEvent,
+    RecordCallOutcomeInput,
     SourceEventEnvelope,
 )
 from .domain.impact import PlanningOptions
@@ -133,19 +139,25 @@ async def get_action(action_id: str, current_user: CurrentUser = Depends(require
 def _openapi_models() -> list[type]:
     return [
         ActionRecord,
+        ActionStatusResponse,
         Approval,
         ApprovalDecisionRequest,
         ApprovalDecisionResponse,
+        CallContract,
         Commitment,
         CreateRepairPlanRequest,
         CreateRepairPlanResponse,
+        DispatchClaim,
         Disruption,
         Edge,
         GmailEvidenceRef,
+        HandoffResponse,
         PlanningOptions,
+        OutcomeValidation,
         Problem,
         Provenance,
         ProviderEvent,
+        RecordCallOutcomeInput,
         SourceEventEnvelope,
     ]
 

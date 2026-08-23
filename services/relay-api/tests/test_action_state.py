@@ -28,6 +28,10 @@ def test_authorized_action_cannot_skip_to_verified():
         validate_transition(ActionState.AUTHORIZED, ActionState.VERIFIED)
 
 
+def test_succeeded_action_can_be_reconciled_for_a_retryable_failure():
+    assert validate_transition(ActionState.SUCCEEDED, ActionState.RETRYABLE_FAILURE) is None
+
+
 def test_handoff_is_only_available_for_an_uber_action():
     with pytest.raises(InvalidActionTransition):
         validate_transition(
