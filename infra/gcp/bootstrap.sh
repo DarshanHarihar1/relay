@@ -34,6 +34,7 @@ readonly REQUIRED_APIS=(
   fcm.googleapis.com
   logging.googleapis.com
   clouderrorreporting.googleapis.com
+  cloudscheduler.googleapis.com
 )
 
 # Runtime roles are identical for both services; Firestore has no per-collection
