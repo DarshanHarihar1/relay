@@ -1,0 +1,20 @@
+{
+  "name": "relay",
+  "private": true,
+  "packageManager": "pnpm@9.15.5",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.31.0",
+    "eslint": "9.31.0",
+    "typescript-eslint": "8.38.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @relay/web dev",
+    "test:web": "pnpm --filter @relay/web test",
+    "check:contracts": "pnpm --filter @relay/contracts check-generated",
+    "lint": "pnpm -r lint",
+    "test": "pnpm test:web && pnpm --dir services/relay-api test"
+  }
+}

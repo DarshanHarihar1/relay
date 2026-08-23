@@ -1,5 +1,29 @@
 # Local development
 
+## First run
+
+From the Relay workspace, run:
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+cd services/relay-api && uv sync --all-groups
+cp .env.example .env.local
+pnpm dev:web
+```
+
+Keep `.env.local` untracked. Never copy production values into it from Cloud Run.
+
+## Local emulators
+
+In separate terminals, start the Task 2 emulators before running emulator-backed tests:
+
+```bash
+gcloud beta emulators firestore start --host-port=127.0.0.1:8080
+gcloud beta emulators pubsub start --host-port=127.0.0.1:8085
+firebase emulators:start --only auth --project relay-local
+```
+
 ## Google Cloud configuration
 
 Relay uses Vertex AI through application-default credentials. Do not commit a `.env` file, API key, access token, service-account JSON file, or local Google Cloud configuration.
