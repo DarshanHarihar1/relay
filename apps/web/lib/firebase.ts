@@ -9,6 +9,9 @@ const firebaseConfig = {
 };
 
 export function getFirebaseAuth() {
-  const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-  return getAuth(app);
+  return getAuth(getFirebaseApp());
+}
+
+export function getFirebaseApp() {
+  return getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 }

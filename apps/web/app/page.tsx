@@ -11,6 +11,11 @@ import { PickupContactPrompt } from "../components/pickup-contact-prompt";
 import { PlanTimeline } from "../components/plan-timeline";
 import { getFirebaseAuth } from "../lib/firebase";
 import { useDashboard } from "../lib/dashboard";
+import {
+  initializeNotifications,
+  subscribeToForegroundMessages,
+  type NotificationStatus,
+} from "../lib/notifications";
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -53,13 +58,50 @@ export default function Home() {
 
 function DashboardShell({ user }: { user: User }) {
   const dashboard = useDashboard(true);
+  const [notificationStatus, setNotificationStatus] = useState<NotificationStatus | "idle">("idle");
+  const [notificationAnnouncement, setNotificationAnnouncement] = useState<string | null>(null);
   const data = dashboard.data;
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe = () => undefined;
+    void subscribeToForegroundMessages({
+      invalidateDashboard: dashboard.refresh,
+      announce: setNotificationAnnouncement,
+    }).then((stop) => {
+      if (active) {
+        unsubscribe = stop;
+      } else {
+        stop();
+      }
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [dashboard.refresh]);
+
+  async function enableNotifications() {
+    try {
+      setNotificationStatus(await initializeNotifications());
+    } catch {
+      setNotificationStatus("unavailable");
+    }
+  }
+
   return (
     <main>
       <header>
         <h1>Relay</h1>
         <p>Signed in as {user.email ?? "your Google account"}</p>
         <button type="button" onClick={() => void signOut(getFirebaseAuth())}>Sign out</button>
+        <button type="button" onClick={() => void enableNotifications()} disabled={notificationStatus === "enabled"}>
+          {notificationStatus === "enabled" ? "Notifications enabled" : "Enable notifications"}
+        </button>
+        {notificationStatus === "denied" && <p>Notifications are off. Relay will keep checking for updates.</p>}
+        {notificationStatus === "unsupported" && <p>Notifications are unavailable in this browser.</p>}
+        {notificationStatus === "unavailable" && <p>Notifications could not be enabled. Relay will keep checking for updates.</p>}
+        {notificationAnnouncement !== null && <p aria-live="polite">{notificationAnnouncement}</p>}
       </header>
       {dashboard.isLoading && data === null && <p>Loading your repair plan...</p>}
       {dashboard.isOffline && (

@@ -8,6 +8,7 @@ from app.routes.product import (
     get_audit_projection_service,
     get_dashboard_projection_service,
     get_pickup_commitment_service,
+    get_notification_service,
 )
 
 
@@ -73,6 +74,16 @@ class FakeAuditService:
         )
 
 
+class FakeNotificationService:
+    def __init__(self) -> None:
+        self.user_id: str | None = None
+        self.token: str | None = None
+
+    async def register_device(self, *, user_id: str, token: str, platform: str = "web") -> None:
+        self.user_id = user_id
+        self.token = token
+
+
 def test_dashboard_requires_firebase_identity(monkeypatch) -> None:
     response = TestClient(app).get("/v1/dashboard")
     assert response.status_code == 401
@@ -109,3 +120,21 @@ def test_pickup_route_uses_token_subject_and_rejects_extra_user_input(monkeypatc
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
+
+
+def test_device_registration_uses_token_subject(monkeypatch) -> None:
+    headers = _auth_headers(monkeypatch)
+    service = FakeNotificationService()
+    app.dependency_overrides[get_notification_service] = lambda: service
+    try:
+        response = TestClient(app).post(
+            "/v1/devices",
+            headers=headers,
+            json={"token": "f" * 32, "platform": "web"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 204
+    assert service.user_id == "user-1"
+    assert service.token == "f" * 32

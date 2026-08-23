@@ -22,6 +22,7 @@ USER_COLLECTIONS = frozenset(
         "outbox",
         "google_connections",
         "selected_contacts",
+        "device_tokens",
         "gmail_claims",
     }
 )
@@ -54,3 +55,46 @@ def as_aware_datetimes(data: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(value, datetime) and (value.tzinfo is None or value.utcoffset() is None):
             normalized[name] = value.replace(tzinfo=timezone.utc)
     return normalized
+
+
+class FirestoreDeviceRepository:
+    """Stores encrypted browser tokens in the authenticated user's namespace."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    async def upsert_device(
+        self,
+        *,
+        user_id: str,
+        token_fingerprint: str,
+        encrypted_token: str,
+        platform: str,
+        last_seen_at: datetime,
+    ) -> None:
+        reference = self._client.document(
+            user_document(user_id, "device_tokens", token_fingerprint)
+        )
+        await reference.set(
+            {
+                "user_id": user_id,
+                "token_fingerprint": token_fingerprint,
+                "encrypted_token": encrypted_token,
+                "platform": platform,
+                "last_seen_at": last_seen_at,
+            },
+            merge=True,
+        )
+
+    async def list_devices(self, user_id: str) -> list[dict[str, object]]:
+        return [
+            snapshot.to_dict() or {}
+            async for snapshot in self._client.collection(
+                f"users/{user_id}/device_tokens"
+            ).stream()
+        ]
+
+    async def remove_device(self, *, user_id: str, token_fingerprint: str) -> None:
+        await self._client.document(
+            user_document(user_id, "device_tokens", token_fingerprint)
+        ).delete()

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from google.cloud.firestore_v1 import AsyncClient
 
 from app.auth import CurrentUser, require_current_user
 from app.config import Settings
-from app.domain.product import ActionAuditView, DashboardView, PickupContactCommand, PickupContactResponse
+from app.domain.product import (
+    ActionAuditView,
+    DashboardView,
+    PickupContactCommand,
+    PickupContactResponse,
+    RegisterDeviceRequest,
+)
+from app.repositories.firestore import FirestoreDeviceRepository
 from app.repositories.product import FirestoreProductRepository, PickupVersionConflict, ProductRepository
 from app.services.audit_projection import AuditProjectionService
 from app.services.contact_selection import (
@@ -14,7 +21,9 @@ from app.services.contact_selection import (
 )
 from app.services.dashboard_projection import DashboardProjectionService
 from app.services.pickup_commitment import PickupCommitmentService
-from app.routes.google import get_contact_selection_service
+from app.routes.google import get_contact_selection_service, get_firestore_client
+from app.security import FernetFieldCipher
+from app.services.notifications import FirebaseNotificationPort, NotificationService
 
 
 router = APIRouter()
@@ -49,6 +58,22 @@ def get_pickup_commitment_service(
     selection: ContactSelectionService = Depends(get_contact_selection_service),
 ) -> PickupCommitmentService:
     return PickupCommitmentService(repository, selection)
+
+
+def get_notification_service(request: Request) -> NotificationService:
+    service = getattr(request.app.state, "notification_service", None)
+    if service is not None:
+        return service
+    encryption_key = Settings.from_env().app_encryption_key
+    if encryption_key is None:
+        raise HTTPException(status_code=503)
+    service = NotificationService(
+        repository=FirestoreDeviceRepository(get_firestore_client()),
+        cipher=FernetFieldCipher(encryption_key),
+        sender=FirebaseNotificationPort(),
+    )
+    request.app.state.notification_service = service
+    return service
 
 
 @router.get("/v1/dashboard", response_model=DashboardView)
@@ -92,10 +117,25 @@ async def get_action_audit(
         raise HTTPException(status_code=404) from error
 
 
+@router.post("/v1/devices", status_code=204, response_class=Response)
+async def register_device(
+    command: RegisterDeviceRequest,
+    current_user: CurrentUser = Depends(require_current_user),
+    service: NotificationService = Depends(get_notification_service),
+) -> Response:
+    await service.register_device(
+        user_id=current_user.uid,
+        token=command.token,
+        platform=command.platform,
+    )
+    return Response(status_code=204)
+
+
 __all__ = [
     "get_audit_projection_service",
     "get_dashboard_projection_service",
     "get_pickup_commitment_service",
     "get_product_repository",
+    "get_notification_service",
     "router",
 ]

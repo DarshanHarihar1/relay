@@ -107,6 +107,13 @@ export async function getDashboard(): Promise<DashboardView> {
   return dashboardViewSchema.parse(await relayFetch<unknown>("/v1/dashboard"));
 }
 
+export async function registerDevice(token: string): Promise<void> {
+  await relayFetch<void>("/v1/devices", {
+    method: "POST",
+    body: JSON.stringify({ token, platform: "web" }),
+  });
+}
+
 export async function submitPickup(
   commitmentId: string,
   command: PickupContactCommand,
