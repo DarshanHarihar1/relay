@@ -27,7 +27,7 @@ def oauth_settings():
 @pytest.mark.asyncio
 async def test_default_connection_requests_only_gmail_and_calendar(oauth_settings):
     from app.adapters.google_auth import (
-        CALENDAR_READONLY_SCOPE,
+    CALENDAR_EVENTS_SCOPE,
         CONTACTS_SCOPE,
         GMAIL_SCOPE,
         GoogleOAuthService,
@@ -43,7 +43,7 @@ async def test_default_connection_requests_only_gmail_and_calendar(oauth_setting
     authorization_url = await service.begin_google_connection("user-1", enable_contacts_picker=False)
 
     assert GMAIL_SCOPE in authorization_url
-    assert CALENDAR_READONLY_SCOPE in authorization_url
+    assert CALENDAR_EVENTS_SCOPE in authorization_url
     assert CONTACTS_SCOPE not in authorization_url
 
 

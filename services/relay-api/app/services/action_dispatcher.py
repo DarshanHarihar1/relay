@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from app.contracts import ActionRecord, CallContract, JsonValue
+from app.providers.calendar import CalendarAdapter
 from app.providers.base import VoiceAdapter
 from app.repositories.actions import ActionRepository
 from app.services.retry_policy import ProviderFailure, RetryDecision, RetryPolicy
@@ -36,6 +37,18 @@ class VoiceCallExecutor:
         )
         reference = await self._adapter.create_call(contract, idempotency_key=action.idempotency_key)
         return ProviderAttempt(provider_ref=reference.provider_ref, evidence={"provider": "vapi"})
+
+
+class CalendarHoldExecutor:
+    def __init__(self, adapter: CalendarAdapter) -> None:
+        self._adapter = adapter
+
+    async def execute(self, action: ActionRecord) -> ProviderAttempt:
+        result = await self._adapter.create_or_get_private_hold(action)
+        return ProviderAttempt(
+            provider_ref=result.event_id,
+            evidence={"provider": "calendar", "created": result.created},
+        )
 
 
 class ActionDispatcher:
@@ -109,4 +122,10 @@ class ActionDispatcher:
         )
 
 
-__all__ = ["ActionDispatcher", "ActionExecutor", "ProviderAttempt", "VoiceCallExecutor"]
+__all__ = [
+    "ActionDispatcher",
+    "ActionExecutor",
+    "CalendarHoldExecutor",
+    "ProviderAttempt",
+    "VoiceCallExecutor",
+]

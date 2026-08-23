@@ -21,6 +21,7 @@ from app.settings import GoogleOAuthSettings
 GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts.readonly"
 CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
+CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 _GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
@@ -124,7 +125,7 @@ class GoogleOAuthService:
 
     @property
     def default_scopes(self) -> frozenset[str]:
-        return frozenset({GMAIL_SCOPE, CALENDAR_READONLY_SCOPE})
+        return frozenset({GMAIL_SCOPE, CALENDAR_EVENTS_SCOPE})
 
     @property
     def default_scopes_string(self) -> str:

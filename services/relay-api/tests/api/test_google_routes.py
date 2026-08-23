@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.adapters.google_auth import CALENDAR_READONLY_SCOPE, CONTACTS_SCOPE, GMAIL_SCOPE
+from app.adapters.google_auth import CALENDAR_EVENTS_SCOPE, CONTACTS_SCOPE, GMAIL_SCOPE
 from app.main import app
 from app.security import FernetFieldCipher
 from app.settings import GoogleOAuthSettings
@@ -66,7 +66,7 @@ def test_default_connect_omits_contacts_scope(monkeypatch):
 
     assert response.status_code == 307
     assert GMAIL_SCOPE in response.headers["location"]
-    assert CALENDAR_READONLY_SCOPE in response.headers["location"]
+    assert CALENDAR_EVENTS_SCOPE in response.headers["location"]
     assert CONTACTS_SCOPE not in response.headers["location"]
 
 
