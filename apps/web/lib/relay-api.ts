@@ -1,4 +1,17 @@
 import { getFirebaseAuth } from "./firebase";
+import {
+  approvalDecisionResponseSchema,
+  dashboardViewSchema,
+  pickupContactCommandSchema,
+  pickupContactResponseSchema,
+  pickerSessionViewSchema,
+  type ApprovalDecisionRequest,
+  type ApprovalDecisionResponse as GeneratedApprovalDecisionResponse,
+  type DashboardView,
+  type PickupContactCommand,
+  type PickupContactResponse,
+  type PickerSessionView,
+} from "../../../packages/contracts/src";
 
 const relayApiUrl = process.env.NEXT_PUBLIC_RELAY_API_URL ?? "";
 
@@ -8,13 +21,9 @@ export type HandoffResponse = {
   url: string;
 };
 
-export type ApprovalDecision = "approve" | "decline";
+export type ApprovalDecision = ApprovalDecisionRequest["decision"];
 
-export type ApprovalDecisionResponse = {
-  approval_id: string;
-  state: "approved" | "declined";
-  action_ids: string[];
-};
+export type ApprovalDecisionResponse = GeneratedApprovalDecisionResponse;
 
 export type RelayActionState =
   | "planned"
@@ -80,7 +89,7 @@ export async function decideApproval(
   decision: ApprovalDecision,
   expectedVersion: number,
 ): Promise<ApprovalDecisionResponse> {
-  return relayFetch<ApprovalDecisionResponse>(
+  const response = await relayFetch<unknown>(
     "/v1/approvals/" + encodeURIComponent(approvalId) + "/decision",
     {
       method: "POST",
@@ -90,6 +99,30 @@ export async function decideApproval(
         expected_version: expectedVersion,
       }),
     },
+  );
+  return approvalDecisionResponseSchema.parse(response);
+}
+
+export async function getDashboard(): Promise<DashboardView> {
+  return dashboardViewSchema.parse(await relayFetch<unknown>("/v1/dashboard"));
+}
+
+export async function submitPickup(
+  commitmentId: string,
+  command: PickupContactCommand,
+): Promise<PickupContactResponse> {
+  const validCommand = pickupContactCommandSchema.parse(command);
+  return pickupContactResponseSchema.parse(
+    await relayFetch<unknown>("/v1/commitments/" + encodeURIComponent(commitmentId) + "/pickup-contact", {
+      method: "POST",
+      body: JSON.stringify(validCommand),
+    }),
+  );
+}
+
+export async function searchPickerContacts(query: string): Promise<PickerSessionView> {
+  return pickerSessionViewSchema.parse(
+    await relayFetch<unknown>("/v1/google/contact-picker?query=" + encodeURIComponent(query)),
   );
 }
 

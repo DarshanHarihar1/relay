@@ -94,6 +94,7 @@ def test_fastapi_openapi_declares_only_relay_contract_routes():
         "/v1/google/callback",
         "/v1/google/connection",
         "/v1/google/contacts",
+        "/v1/google/contact-picker",
         "/v1/commitments/{commitment_id}/pickup-contact",
         "/v1/events/gmail",
             "/internal/maintenance/daily",

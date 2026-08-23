@@ -1,4 +1,4 @@
-// Generated from openapi/relay.yaml (sha256:ec8c18e8b0507aaad0aa329ed47c83d8775e0c181801b08d48ce6894219938ad). Do not edit manually.
+// Generated from openapi/relay.yaml (sha256:700b0d23a9e969b23c17c99b4df39efa4e8a9291e4e4bb2a87992c9de2054f78). Do not edit manually.
 import { z } from "zod";
 
 export const actionStates = ["planned", "awaiting_approval", "authorized", "dispatched", "in_progress", "succeeded", "needs_user", "retryable_failure", "failed", "verified", "handoff_opened"] as const;
@@ -207,6 +207,7 @@ export const planTimelineItemSchema = z.object({
   status: timelineStatusSchema,
   explanation: z.string().trim().min(1).max(360),
   is_pickup_prompt: z.boolean().default(false),
+  pickup_version: z.number().int().min(1).nullable().optional(),
 }).strict().superRefine((item, context) => {
   if (new Date(item.ends_at).getTime() <= new Date(item.starts_at).getTime()) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["ends_at"], message: "Timeline item must end after it starts" });
@@ -306,3 +307,19 @@ export const registerDeviceRequestSchema = z.object({
   platform: z.literal("web").default("web"),
 }).strict();
 export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
+
+export const pickerPhoneViewSchema = z.object({
+  label: z.string().max(100).nullable().optional(),
+  last4: z.string().regex(/^\\d{4}$/),
+}).strict();
+export type PickerPhoneView = z.infer<typeof pickerPhoneViewSchema>;
+export const pickerContactViewSchema = z.object({
+  display_name: z.string().trim().min(1).max(200),
+  phones: z.array(pickerPhoneViewSchema),
+}).strict();
+export type PickerContactView = z.infer<typeof pickerContactViewSchema>;
+export const pickerSessionViewSchema = z.object({
+  session_id: nonEmptyString,
+  contacts: z.array(pickerContactViewSchema),
+}).strict();
+export type PickerSessionView = z.infer<typeof pickerSessionViewSchema>;

@@ -118,6 +118,23 @@ paths:
             X-Correlation-ID:
               $ref: "#/components/headers/CorrelationId"
         "401": { $ref: "#/components/responses/Problem" }
+  /v1/google/contact-picker:
+    get:
+      operationId: searchContactPicker
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string, minLength: 2 }
+      responses:
+        "200":
+          description: Redacted current picker session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PickerSessionView" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /v1/actions/{action_id}:
     get:
       operationId: getAction
@@ -476,7 +493,7 @@ components:
     PlanTimelineItem:
       type: object
       additionalProperties: false
-      required: [commitment_id, title, starts_at, ends_at, status, explanation, is_pickup_prompt]
+      required: [commitment_id, title, starts_at, ends_at, status, explanation, is_pickup_prompt, pickup_version]
       properties:
         commitment_id: { type: string, minLength: 1 }
         title: { type: string, minLength: 1, maxLength: 140 }
@@ -485,6 +502,7 @@ components:
         status: { $ref: "#/components/schemas/TimelineStatus" }
         explanation: { type: string, minLength: 1, maxLength: 360 }
         is_pickup_prompt: { type: boolean, default: false }
+        pickup_version: { type: [integer, "null"], minimum: 1 }
     ApprovalActionSummary:
       type: object
       additionalProperties: false
@@ -576,6 +594,27 @@ components:
       properties:
         token: { type: string, minLength: 32, maxLength: 4096 }
         platform: { const: web }
+    PickerPhoneView:
+      type: object
+      additionalProperties: false
+      required: [last4]
+      properties:
+        label: { type: [string, "null"], maxLength: 100 }
+        last4: { type: string, pattern: "^[0-9]{4}$" }
+    PickerContactView:
+      type: object
+      additionalProperties: false
+      required: [display_name, phones]
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 200 }
+        phones: { type: array, items: { $ref: "#/components/schemas/PickerPhoneView" } }
+    PickerSessionView:
+      type: object
+      additionalProperties: false
+      required: [session_id, contacts]
+      properties:
+        session_id: { type: string, minLength: 1 }
+        contacts: { type: array, items: { $ref: "#/components/schemas/PickerContactView" } }
     Problem:
       type: object
       additionalProperties: false

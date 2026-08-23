@@ -46,6 +46,7 @@ class PlanTimelineItem(ProductModel):
     status: TimelineStatus
     explanation: str = Field(min_length=1, max_length=360)
     is_pickup_prompt: bool = False
+    pickup_version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def validate_interval(self) -> "PlanTimelineItem":
@@ -175,6 +176,21 @@ class RegisterDeviceRequest(ProductModel):
     platform: Literal["web"] = "web"
 
 
+class PickerPhoneView(ProductModel):
+    label: str | None = Field(default=None, max_length=100)
+    last4: str = Field(pattern=r"^\d{4}$")
+
+
+class PickerContactView(ProductModel):
+    display_name: str = Field(min_length=1, max_length=200)
+    phones: tuple[PickerPhoneView, ...]
+
+
+class PickerSessionView(ProductModel):
+    session_id: NonEmptyString
+    contacts: tuple[PickerContactView, ...]
+
+
 __all__ = [
     "ActionAuditView",
     "ActionOutcomeView",
@@ -185,6 +201,9 @@ __all__ = [
     "OutcomeStatus",
     "PickupContactCommand",
     "PickupContactResponse",
+    "PickerContactView",
+    "PickerPhoneView",
+    "PickerSessionView",
     "PlanTimelineItem",
     "RegisterDeviceRequest",
     "TimelineStatus",

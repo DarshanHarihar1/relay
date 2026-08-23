@@ -13,6 +13,7 @@ from app.adapters.google_auth import GoogleConnectionRequest, GoogleOAuthService
 from app.adapters.google_people import GooglePeopleAdapter
 from app.auth import CurrentUser, require_current_user
 from app.domain.context import PickerContact
+from app.domain.product import PickerContactView, PickerPhoneView, PickerSessionView
 from app.security import FernetFieldCipher
 from app.services.gmail_ingestion import GmailWatchService
 from app.services.contact_selection import (
@@ -156,6 +157,36 @@ async def search_google_contacts(
         raise HTTPException(status_code=409, detail="CONTACTS_PERMISSION_REQUIRED") from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail="Invalid contact picker request") from error
+
+
+@router.get("/contact-picker", response_model=PickerSessionView)
+async def search_google_contact_picker(
+    query: str,
+    current_user: CurrentUser = Depends(require_current_user),
+    service: ContactSelectionService = Depends(get_contact_selection_service),
+) -> PickerSessionView:
+    try:
+        session_id, contacts = await service.search_picker_session(user_id=current_user.uid, query=query)
+    except ContactsPermissionRequired as error:
+        raise HTTPException(status_code=409, detail="CONTACTS_PERMISSION_REQUIRED") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail="Invalid contact picker request") from error
+    return PickerSessionView(
+        session_id=session_id,
+        contacts=tuple(
+            PickerContactView(
+                display_name=contact.display_name,
+                phones=tuple(
+                    PickerPhoneView(
+                        label=phone.label,
+                        last4="".join(character for character in phone.number if character.isdigit())[-4:],
+                    )
+                    for phone in contact.phones
+                ),
+            )
+            for contact in contacts
+        ),
+    )
 
 
 @pickup_router.put("/{commitment_id}/pickup-contact", status_code=204, response_class=Response)

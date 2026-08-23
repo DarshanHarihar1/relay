@@ -97,6 +97,7 @@ def _timeline_item(commitment, affected_ids: set[str], changed_ids: set[str], ve
         status=status,
         explanation=explanation,
         is_pickup_prompt=(commitment.type or "").lower() in {"pickup", "transport"},
+        pickup_version=commitment.version if (commitment.type or "").lower() in {"pickup", "transport"} else None,
     )
 
 
