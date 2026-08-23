@@ -4,8 +4,13 @@ metadata:
   name: relay-api
   annotations:
     relay.dev/region: asia-south1
-    run.googleapis.com/ingress: internal-and-cloud-load-balancing
-    run.googleapis.com/invoker-iam-disabled: "false"
+    # Publicly reachable because the browser OAuth callback and Pub/Sub push
+    # both originate outside the VPC. Every route authenticates itself:
+    # Firebase ID token on user routes, and full Google OIDC verification
+    # (issuer, exact audience, exact service account, email_verified) on
+    # /v1/events/gmail and /internal/maintenance/daily.
+    run.googleapis.com/ingress: all
+    run.googleapis.com/invoker-iam-disabled: "true"
     relay.dev/pubsub-route: /v1/events/gmail
 spec:
   template:

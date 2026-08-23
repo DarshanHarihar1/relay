@@ -83,6 +83,7 @@ def test_fastapi_openapi_declares_only_relay_contract_routes():
 
     assert set(document["paths"]) == {
         "/healthz",
+        "/health",
         "/v1/me",
         "/v1/actions/{action_id}",
         "/v1/approvals/{approval_id}/decision",

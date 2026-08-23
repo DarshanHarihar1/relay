@@ -95,6 +95,10 @@ async def unhandled_exception_handler(request: Request, exception: Exception) ->
     return _problem_response(request, 500, "internal_error", "The service could not complete this request.")
 
 
+# Google Front End intercepts /healthz on Cloud Run and answers it itself, so
+# the request never reaches the container. /health is the reachable path; both
+# are served so local tooling and probes keep working.
+@app.get("/health")
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
