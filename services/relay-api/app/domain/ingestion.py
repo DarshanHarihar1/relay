@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -14,7 +14,11 @@ class GoogleConnection(ContractModel):
     provider: Literal["google"] = "google"
     granted_scopes: frozenset[NonEmptyString]
     gmail_label_id: NonEmptyString | None = None
+    # This mailbox is used only to resolve an authenticated Gmail notification
+    # to exactly one connected Relay user. It is never supplied by Pub/Sub as a user ID.
+    gmail_email_address: NonEmptyString | None = None
     gmail_history_id: int | None = Field(default=None, ge=0)
+    gmail_watch_expires_at: AwareDatetime | None = None
     encrypted_refresh_token: NonEmptyString
     connected_at: AwareDatetime
     contacts_picker_enabled: bool = False
@@ -24,6 +28,13 @@ class GmailNotification(ContractModel):
     email_address: NonEmptyString
     history_id: int = Field(ge=0)
     published_at: AwareDatetime
+
+
+class GmailProfile(ContractModel):
+    """The mailbox identity Relay resolves server-side, never from a push payload."""
+
+    email_address: NonEmptyString
+    history_id: int = Field(ge=0)
 
 
 class GmailMessage(ContractModel):
@@ -42,6 +53,7 @@ class GmailMessage(ContractModel):
 class WatchRegistration(ContractModel):
     history_id: int = Field(ge=0)
     expires_at: AwareDatetime
+    request: dict[str, Any] = Field(default_factory=dict)
 
 
 class HistoryPage(ContractModel):

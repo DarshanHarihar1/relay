@@ -25,6 +25,7 @@ from .contracts import (
 )
 from .routes.actions import router as actions_router
 from .routes.google import pickup_router, router as google_router
+from .routes.pubsub import router as pubsub_router
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -41,6 +42,7 @@ app.add_middleware(CorrelationIdMiddleware)
 app.include_router(actions_router)
 app.include_router(google_router)
 app.include_router(pickup_router)
+app.include_router(pubsub_router)
 
 
 def create_app() -> FastAPI:

@@ -39,6 +39,14 @@ class GoogleOAuthStore(Protocol):
 
     async def get_connection(self, user_id: str) -> GoogleConnection | None: ...
 
+    async def get_active_connections_by_gmail_email(
+        self, email_address: str
+    ) -> list[GoogleConnection]: ...
+
+    async def list_connections_due_for_watch_renewal(
+        self, before: datetime
+    ) -> list[GoogleConnection]: ...
+
     async def delete_connection(self, user_id: str) -> None: ...
 
     async def delete_gmail_cursor(self, user_id: str) -> None: ...
@@ -67,6 +75,27 @@ class InMemoryGoogleOAuthStore:
 
     async def get_connection(self, user_id: str) -> GoogleConnection | None:
         return self._connections.get(user_id)
+
+    async def get_active_connections_by_gmail_email(
+        self, email_address: str
+    ) -> list[GoogleConnection]:
+        wanted = email_address.casefold()
+        return [
+            connection
+            for connection in self._connections.values()
+            if connection.gmail_email_address
+            and connection.gmail_email_address.casefold() == wanted
+        ]
+
+    async def list_connections_due_for_watch_renewal(
+        self, before: datetime
+    ) -> list[GoogleConnection]:
+        return [
+            connection
+            for connection in self._connections.values()
+            if connection.gmail_watch_expires_at is not None
+            and connection.gmail_watch_expires_at <= before
+        ]
 
     async def delete_connection(self, user_id: str) -> None:
         self._connections.pop(user_id, None)
@@ -191,6 +220,20 @@ class GoogleOAuthService:
     async def get_connection(self, user_id: str) -> GoogleConnection | None:
         """Return the requesting user's existing server-side connection only."""
         return await self._store.get_connection(user_id)
+
+    async def put_connection(self, connection: GoogleConnection) -> None:
+        await self._store.put_connection(connection)
+
+    async def get_active_connections_by_gmail_email(
+        self, email_address: str
+    ) -> list[GoogleConnection]:
+        """Resolve a Gmail push mailbox to connections. The caller requires exactly one."""
+        return await self._store.get_active_connections_by_gmail_email(email_address)
+
+    async def list_connections_due_for_watch_renewal(
+        self, before: datetime
+    ) -> list[GoogleConnection]:
+        return await self._store.list_connections_due_for_watch_renewal(before)
 
     def decrypt_refresh_token(self, connection: GoogleConnection) -> str:
         return self._cipher.decrypt(connection.encrypted_refresh_token)

@@ -115,7 +115,7 @@ configure_push_subscription() {
     --quiet >/dev/null
 }
 
-if ! configure_push_subscription gmail-events-api relay-api /internal/pubsub/gmail-events "$API_SERVICE_ACCOUNT"; then
+if ! configure_push_subscription gmail-events-api relay-api /v1/events/gmail "$API_SERVICE_ACCOUNT"; then
   printf 'Deploy relay-api, then rerun this script to configure Gmail push delivery.\n' >&2
 fi
 

@@ -4,7 +4,13 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.context import CalendarWindow, PickerContact, PlaceDetails, PlaceRef, RouteEstimate, TimeInterval
-from app.domain.ingestion import GmailMessage, GoogleConnection, HistoryPage, WatchRegistration
+from app.domain.ingestion import (
+    GmailMessage,
+    GmailProfile,
+    GoogleConnection,
+    HistoryPage,
+    WatchRegistration,
+)
 
 
 class CalendarPort(Protocol):
@@ -32,6 +38,8 @@ class PlacesPort(Protocol):
 
 
 class GmailPort(Protocol):
+    async def get_profile(self, *, connection: GoogleConnection) -> GmailProfile: ...
+
     async def ensure_watch(self, *, connection: GoogleConnection) -> WatchRegistration: ...
 
     async def list_history(
@@ -39,9 +47,14 @@ class GmailPort(Protocol):
         *,
         connection: GoogleConnection,
         start_history_id: int,
+        page_token: str | None = None,
     ) -> HistoryPage: ...
 
     async def get_message(self, *, connection: GoogleConnection, message_id: str) -> GmailMessage: ...
+
+    async def resync_last_48_hours(
+        self, *, connection: GoogleConnection, since: datetime
+    ) -> HistoryPage: ...
 
 
 class PeoplePort(Protocol):

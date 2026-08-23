@@ -9,6 +9,26 @@ def test_secret_manifest_contains_names_but_no_values():
 
 
 def test_cloud_run_specs_do_not_define_plaintext_secret_envs():
-    api_spec = Path("../../infra/gcp/cloudrun/relay-api.service.yaml").read_text()
-    assert "secretKeyRef" in api_spec
-    assert "value: " not in api_spec
+    secret_names = set(Path("../../infra/gcp/secret-manifest.txt").read_text().split())
+    for service in ("relay-api", "relay-worker"):
+        spec = Path(f"../../infra/gcp/cloudrun/{service}.service.yaml").read_text()
+        assert "secretKeyRef" in spec
+        env_name = None
+        for line in spec.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- name: "):
+                env_name = stripped.removeprefix("- name: ")
+            elif stripped.startswith("value: "):
+                assert env_name not in secret_names, f"{env_name} must use secretKeyRef"
+
+
+def test_gmail_push_is_authenticated_and_bounded():
+    pubsub = Path("../../infra/gcp/pubsub.sh").read_text()
+    assert "--push-auth-service-account" in pubsub
+    assert "--max-delivery-attempts=5" in pubsub
+    assert "--dead-letter-topic" in pubsub
+    assert "/v1/events/gmail" in pubsub
+
+    worker_spec = Path("../../infra/gcp/cloudrun/relay-worker.service.yaml").read_text()
+    assert "run.googleapis.com/ingress: internal" in worker_spec
+    assert 'run.googleapis.com/invoker-iam-disabled: "false"' in worker_spec

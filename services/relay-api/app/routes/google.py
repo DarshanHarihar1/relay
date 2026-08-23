@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 
+from app.adapters.gmail import GmailAdapter, GmailRetryableError, GmailTerminalError
 from app.adapters.google_auth import GoogleConnectionRequest, GoogleOAuthService
 from app.adapters.google_people import GooglePeopleAdapter
 from app.auth import CurrentUser, require_current_user
 from app.domain.context import PickerContact
 from app.security import FernetFieldCipher
+from app.services.gmail_ingestion import (
+    GmailWatchService,
+    InMemoryGmailIngestionRepository,
+)
 from app.services.contact_selection import (
     ContactChoice,
     ContactSelectionService,
@@ -18,6 +24,8 @@ from app.services.contact_selection import (
 )
 from app.settings import GoogleOAuthSettings
 
+
+logger = logging.getLogger("relay.google")
 
 router = APIRouter(prefix="/v1/google", tags=["google"])
 pickup_router = APIRouter(prefix="/v1/commitments", tags=["commitments"])
@@ -32,6 +40,21 @@ def get_google_oauth_service() -> GoogleOAuthService:
     if not encryption_key:
         raise RuntimeError("Missing Google OAuth configuration: APP_ENCRYPTION_KEY")
     return GoogleOAuthService(settings=settings, cipher=FernetFieldCipher(encryption_key))
+
+
+@lru_cache(maxsize=1)
+def get_gmail_watch_service() -> GmailWatchService:
+    settings = GoogleOAuthSettings.from_env()
+    oauth = get_google_oauth_service()
+    return GmailWatchService(
+        repository=InMemoryGmailIngestionRepository(oauth),
+        gmail=GmailAdapter(
+            client_id=settings.client_id,
+            client_secret=settings.client_secret,
+            topic=settings.gmail_topic,
+            refresh_token_reader=oauth.decrypt_refresh_token,
+        ),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -75,11 +98,17 @@ async def complete_google_connection(
     code: str,
     state: str,
     service: GoogleOAuthService = Depends(get_google_oauth_service),
+    watches: GmailWatchService = Depends(get_gmail_watch_service),
 ) -> RedirectResponse:
     try:
-        await service.complete_google_connection(code=code, state=state)
+        connection = await service.complete_google_connection(code=code, state=state)
     except ValueError as error:
         raise HTTPException(status_code=400, detail="Google connection could not be completed") from error
+    try:
+        await watches.register_gmail_watch(connection.user_id)
+    except (GmailRetryableError, GmailTerminalError):
+        # The account is connected. Watch registration is retried by renewal.
+        logger.warning("gmail_watch_registration_deferred")
     return RedirectResponse(location="/connections/google", status_code=303)
 
 
