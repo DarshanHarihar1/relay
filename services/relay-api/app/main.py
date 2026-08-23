@@ -34,6 +34,18 @@ from .contracts import (
     SourceEventEnvelope,
 )
 from .domain.impact import PlanningOptions
+from .domain.product import (
+    ActionAuditView,
+    ActionOutcomeView,
+    ApprovalActionSummary,
+    ApprovalBatchView,
+    AuditEventView,
+    DashboardView,
+    PickupContactCommand,
+    PickupContactResponse,
+    PlanTimelineItem,
+    RegisterDeviceRequest,
+)
 from .routes.actions import router as actions_router
 from .routes.google import pickup_router, router as google_router
 from .routes.pubsub import router as pubsub_router
@@ -148,6 +160,10 @@ def _openapi_models() -> list[type]:
         ActionRecord,
         ActionDispatchRecord,
         ActionStatusResponse,
+        ActionAuditView,
+        ActionOutcomeView,
+        ApprovalActionSummary,
+        ApprovalBatchView,
         Approval,
         ApprovalDecisionRequest,
         ApprovalDecisionResponse,
@@ -160,6 +176,12 @@ def _openapi_models() -> list[type]:
         Edge,
         GmailEvidenceRef,
         HandoffResponse,
+        AuditEventView,
+        DashboardView,
+        PickupContactCommand,
+        PickupContactResponse,
+        PlanTimelineItem,
+        RegisterDeviceRequest,
         PlanningOptions,
         OutcomeValidation,
         Problem,

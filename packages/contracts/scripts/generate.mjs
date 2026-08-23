@@ -24,7 +24,132 @@ const requiredFragments = [
   "/v1/me:",
   "/v1/actions/{action_id}:",
   "/v1/approvals/{approval_id}/decision:",
+  "/v1/dashboard:",
+  "/v1/commitments/{commitment_id}/pickup-contact:",
+  "/v1/actions/{action_id}/audit:",
+  "DashboardView:",
+  "PickupContactCommand:",
 ];
+
+function renderProductContracts() {
+  return String.raw`
+export const timelineStatuses = ["changed", "at_risk", "repaired", "unresolved", "protected"] as const;
+export const outcomeStatuses = ["verified", "in_progress", "retrying", "needs_user", "failed", "handoff"] as const;
+export const timelineStatusSchema = z.enum(timelineStatuses);
+export const outcomeStatusSchema = z.enum(outcomeStatuses);
+export type TimelineStatus = z.infer<typeof timelineStatusSchema>;
+export type OutcomeStatus = z.infer<typeof outcomeStatusSchema>;
+const utcDateTime = awareDateTime.refine((value) => value.endsWith("Z") || value.endsWith("+00:00"), "UTC timestamp required");
+
+export const planTimelineItemSchema = z.object({
+  commitment_id: nonEmptyString,
+  title: z.string().trim().min(1).max(140),
+  starts_at: utcDateTime,
+  ends_at: utcDateTime,
+  status: timelineStatusSchema,
+  explanation: z.string().trim().min(1).max(360),
+  is_pickup_prompt: z.boolean().default(false),
+}).strict().superRefine((item, context) => {
+  if (new Date(item.ends_at).getTime() <= new Date(item.starts_at).getTime()) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["ends_at"], message: "Timeline item must end after it starts" });
+  }
+});
+export type PlanTimelineItem = z.infer<typeof planTimelineItemSchema>;
+
+export const approvalActionSummarySchema = z.object({
+  action_id: nonEmptyString,
+  kind: actionTypeSchema,
+  goal: z.string().trim().min(1).max(160),
+  authorized_options: stringList,
+  max_fee_inr: z.number().int().min(0),
+  expires_at: utcDateTime.nullable(),
+  disclosure: z.string().trim().max(240).nullable().optional(),
+  must_not: stringList,
+}).strict();
+export type ApprovalActionSummary = z.infer<typeof approvalActionSummarySchema>;
+
+export const approvalBatchViewSchema = z.object({
+  approval_id: nonEmptyString,
+  version: z.number().int().min(1),
+  state: z.enum(["awaiting_approval", "approved", "declined", "expired", "blocked"]),
+  expires_at: utcDateTime,
+  reason: z.string().trim().min(1).max(360),
+  actions: z.array(approvalActionSummarySchema),
+}).strict();
+export type ApprovalBatchView = z.infer<typeof approvalBatchViewSchema>;
+
+export const actionOutcomeViewSchema = z.object({
+  action_id: nonEmptyString,
+  kind: actionTypeSchema,
+  status: outcomeStatusSchema,
+  summary: z.string().trim().min(1).max(360),
+  occurred_at: utcDateTime,
+  evidence_label: z.string().trim().max(180).nullable().optional(),
+  retry_at: utcDateTime.nullable().optional(),
+  handoff_url: z.string().url().nullable().optional(),
+}).strict();
+export type ActionOutcomeView = z.infer<typeof actionOutcomeViewSchema>;
+
+export const auditEventViewSchema = z.object({
+  occurred_at: utcDateTime,
+  event_code: nonEmptyString,
+  summary: z.string().trim().min(1).max(360),
+}).strict();
+export type AuditEventView = z.infer<typeof auditEventViewSchema>;
+export const actionAuditViewSchema = z.object({
+  outcome: actionOutcomeViewSchema,
+  events: z.array(auditEventViewSchema),
+}).strict();
+export type ActionAuditView = z.infer<typeof actionAuditViewSchema>;
+
+export const pickupContactCommandSchema = z.object({
+  selection: z.enum(["no_pickup", "google_picker", "manual"]),
+  picker_session_id: nonEmptyString.nullable().optional(),
+  picker_contact_index: z.number().int().min(0).max(19).nullable().optional(),
+  manual_display_name: z.string().trim().min(1).max(200).nullable().optional(),
+  manual_phone_number: z.string().trim().min(7).max(32).nullable().optional(),
+  expected_version: z.number().int().min(1),
+}).strict().superRefine((command, context) => {
+  const picker = command.picker_session_id !== undefined || command.picker_contact_index !== undefined;
+  const manual = command.manual_display_name !== undefined || command.manual_phone_number !== undefined;
+  if (command.selection === "no_pickup" && (picker || manual)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "no_pickup cannot include contact fields" });
+  }
+  if (command.selection === "google_picker" && (!command.picker_session_id || command.picker_contact_index === undefined || manual)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "google_picker requires a current picker result" });
+  }
+  if (command.selection === "manual" && (!command.manual_display_name || !command.manual_phone_number || picker)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "manual selection requires a name and phone number" });
+  }
+});
+export type PickupContactCommand = z.infer<typeof pickupContactCommandSchema>;
+
+export const pickupContactResponseSchema = z.object({
+  commitment_id: nonEmptyString,
+  version: z.number().int().min(1),
+  selection: z.enum(["no_pickup", "selected"]),
+  display_name: z.string().nullable().optional(),
+}).strict();
+export type PickupContactResponse = z.infer<typeof pickupContactResponseSchema>;
+
+export const dashboardViewSchema = z.object({
+  repair_plan_id: nonEmptyString,
+  repair_plan_version: z.number().int().min(1),
+  generated_at: utcDateTime,
+  timeline: z.array(planTimelineItemSchema),
+  approval: approvalBatchViewSchema.nullable(),
+  outcomes: z.array(actionOutcomeViewSchema),
+  last_event_id: nonEmptyString.nullable().optional(),
+}).strict();
+export type DashboardView = z.infer<typeof dashboardViewSchema>;
+
+export const registerDeviceRequestSchema = z.object({
+  token: z.string().min(32).max(4096),
+  platform: z.literal("web").default("web"),
+}).strict();
+export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
+`;
+}
 
 function renderExecutionContracts(digest) {
   return String.raw`// Generated from openapi/relay.yaml (sha256:` + digest + String.raw`). Do not edit manually.
@@ -219,7 +344,7 @@ export const sourceEventEnvelopeSchema = z.object({
 export type SourceEventEnvelope = z.infer<typeof sourceEventEnvelopeSchema>;
 export const problemSchema = z.object({ code: nonEmptyString, message: nonEmptyString, correlation_id: nonEmptyString }).strict();
 export type Problem = z.infer<typeof problemSchema>;
-`;
+` + renderProductContracts();
 }
 
 function render(source) {

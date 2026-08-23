@@ -42,6 +42,82 @@ paths:
                   email: { type: [string, "null"] }
         "401":
           $ref: "#/components/responses/Problem"
+  /v1/dashboard:
+    get:
+      operationId: getDashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Redacted repair dashboard
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardView" }
+        "401": { $ref: "#/components/responses/Problem" }
+  /v1/commitments/{commitment_id}/pickup-contact:
+    post:
+      operationId: declarePickupContact
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: commitment_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PickupContactCommand" }
+      responses:
+        "200":
+          description: Explicit pickup decision
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PickupContactResponse" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/actions/{action_id}/audit:
+    get:
+      operationId: getActionAudit
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Redacted action outcome and audit projection
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionAuditView" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /v1/devices:
+    post:
+      operationId: registerDevice
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterDeviceRequest" }
+      responses:
+        "204":
+          description: Device registered
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+        "401": { $ref: "#/components/responses/Problem" }
   /v1/actions/{action_id}:
     get:
       operationId: getAction
@@ -389,6 +465,115 @@ components:
         occurred_at: { type: string, format: date-time }
         payload: { type: object, additionalProperties: true }
         correlation_id: { type: string, minLength: 1 }
+    TimelineStatus:
+      type: string
+      enum: [changed, at_risk, repaired, unresolved, protected]
+    OutcomeStatus:
+      type: string
+      enum: [verified, in_progress, retrying, needs_user, failed, handoff]
+    PlanTimelineItem:
+      type: object
+      additionalProperties: false
+      required: [commitment_id, title, starts_at, ends_at, status, explanation, is_pickup_prompt]
+      properties:
+        commitment_id: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1, maxLength: 140 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        status: { $ref: "#/components/schemas/TimelineStatus" }
+        explanation: { type: string, minLength: 1, maxLength: 360 }
+        is_pickup_prompt: { type: boolean, default: false }
+    ApprovalActionSummary:
+      type: object
+      additionalProperties: false
+      required: [action_id, kind, goal, authorized_options, max_fee_inr, expires_at, must_not]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/ActionType" }
+        goal: { type: string, minLength: 1, maxLength: 160 }
+        authorized_options: { type: array, items: { type: string, minLength: 1 } }
+        max_fee_inr: { type: integer, minimum: 0 }
+        expires_at: { type: [string, "null"], format: date-time }
+        disclosure: { type: [string, "null"], maxLength: 240 }
+        must_not: { type: array, items: { type: string, minLength: 1 } }
+    ApprovalBatchView:
+      type: object
+      additionalProperties: false
+      required: [approval_id, version, state, expires_at, reason, actions]
+      properties:
+        approval_id: { type: string, minLength: 1 }
+        version: { type: integer, minimum: 1 }
+        state: { type: string, enum: [awaiting_approval, approved, declined, expired, blocked] }
+        expires_at: { type: string, format: date-time }
+        reason: { type: string, minLength: 1, maxLength: 360 }
+        actions: { type: array, items: { $ref: "#/components/schemas/ApprovalActionSummary" } }
+    ActionOutcomeView:
+      type: object
+      additionalProperties: false
+      required: [action_id, kind, status, summary, occurred_at]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/ActionType" }
+        status: { $ref: "#/components/schemas/OutcomeStatus" }
+        summary: { type: string, minLength: 1, maxLength: 360 }
+        occurred_at: { type: string, format: date-time }
+        evidence_label: { type: [string, "null"], maxLength: 180 }
+        retry_at: { type: [string, "null"], format: date-time }
+        handoff_url: { type: [string, "null"], format: uri }
+    AuditEventView:
+      type: object
+      additionalProperties: false
+      required: [occurred_at, event_code, summary]
+      properties:
+        occurred_at: { type: string, format: date-time }
+        event_code: { type: string, minLength: 1 }
+        summary: { type: string, minLength: 1, maxLength: 360 }
+    ActionAuditView:
+      type: object
+      additionalProperties: false
+      required: [outcome, events]
+      properties:
+        outcome: { $ref: "#/components/schemas/ActionOutcomeView" }
+        events: { type: array, items: { $ref: "#/components/schemas/AuditEventView" } }
+    PickupContactCommand:
+      type: object
+      additionalProperties: false
+      required: [selection, expected_version]
+      properties:
+        selection: { type: string, enum: [no_pickup, google_picker, manual] }
+        picker_session_id: { type: [string, "null"] }
+        picker_contact_index: { type: [integer, "null"], minimum: 0, maximum: 19 }
+        manual_display_name: { type: [string, "null"], minLength: 1, maxLength: 200 }
+        manual_phone_number: { type: [string, "null"], minLength: 7, maxLength: 32 }
+        expected_version: { type: integer, minimum: 1 }
+    PickupContactResponse:
+      type: object
+      additionalProperties: false
+      required: [commitment_id, version, selection, display_name]
+      properties:
+        commitment_id: { type: string, minLength: 1 }
+        version: { type: integer, minimum: 1 }
+        selection: { type: string, enum: [no_pickup, selected] }
+        display_name: { type: [string, "null"] }
+    DashboardView:
+      type: object
+      additionalProperties: false
+      required: [repair_plan_id, repair_plan_version, generated_at, timeline, approval, outcomes, last_event_id]
+      properties:
+        repair_plan_id: { type: string, minLength: 1 }
+        repair_plan_version: { type: integer, minimum: 1 }
+        generated_at: { type: string, format: date-time }
+        timeline: { type: array, items: { $ref: "#/components/schemas/PlanTimelineItem" } }
+        approval: { anyOf: [{ $ref: "#/components/schemas/ApprovalBatchView" }, { type: "null" }] }
+        outcomes: { type: array, items: { $ref: "#/components/schemas/ActionOutcomeView" } }
+        last_event_id: { type: [string, "null"] }
+    RegisterDeviceRequest:
+      type: object
+      additionalProperties: false
+      required: [token, platform]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 4096 }
+        platform: { const: web }
     Problem:
       type: object
       additionalProperties: false

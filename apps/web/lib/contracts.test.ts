@@ -1,4 +1,8 @@
-import { actionStateSchema, sourceEventEnvelopeSchema } from "../../../packages/contracts/src";
+import {
+  actionStateSchema,
+  pickupContactCommandSchema,
+  sourceEventEnvelopeSchema,
+} from "../../../packages/contracts/src";
 
 it("exposes the generated action states", () => {
   expect(actionStateSchema.safeParse("verified").success).toBe(true);
@@ -15,4 +19,13 @@ it("rejects source events without a stable idempotency key", () => {
       correlation_id: "correlation-1",
     }).success,
   ).toBe(false);
+});
+
+it("keeps the pickup union exclusive in browser validation", () => {
+  expect(
+    pickupContactCommandSchema.safeParse({ selection: "manual", expected_version: 1 }).success,
+  ).toBe(false);
+  expect(
+    pickupContactCommandSchema.safeParse({ selection: "no_pickup", expected_version: 1 }).success,
+  ).toBe(true);
 });
