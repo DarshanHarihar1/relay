@@ -26,6 +26,9 @@ spec:
               value: 248144890838-je2nd969tue4keml65272ssn6tq3bhes.apps.googleusercontent.com
             - name: GOOGLE_CLOUD_PROJECT
               value: PROJECT_ID
+            # Firebase ID tokens on /v1/me and /v1/google/* are verified against this.
+            - name: FIREBASE_PROJECT_ID
+              value: PROJECT_ID
             - name: GOOGLE_CLOUD_LOCATION
               value: us-central1
             - name: RELAY_GEMINI_MODEL
