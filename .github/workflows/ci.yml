@@ -1,0 +1,75 @@
+name: Relay CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:contracts
+
+  web:
+    needs: contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test:web
+
+  api:
+    needs: contracts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/relay-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked --all-groups
+      - run: uv run ruff check .
+      - run: uv run pytest -m "not emulator"
+
+  firestore-integration:
+    needs: api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/relay-api
+    env:
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: beta,cloud-firestore-emulator
+      - run: uv sync --locked --all-groups
+      - run: gcloud beta emulators firestore start --host-port="$FIRESTORE_EMULATOR_HOST" --quiet > /tmp/firestore-emulator.log 2>&1 &
+      - run: until nc -z 127.0.0.1 8080; do sleep 1; done
+      - run: uv run pytest -m emulator
+
+  container:
+    needs: api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag relay-api-ci --file services/relay-api/Dockerfile services/relay-api
+      - run: docker run --detach --rm --name relay-api-ci --publish 8080:8080 --env RELAY_ENV=ci --env GOOGLE_CLOUD_PROJECT=relay-ci relay-api-ci
+      - run: until curl --fail --silent --show-error http://127.0.0.1:8080/healthz; do sleep 1; done

@@ -40,6 +40,10 @@ app.add_middleware(CorrelationIdMiddleware)
 app.include_router(actions_router)
 
 
+def create_app() -> FastAPI:
+    return app
+
+
 def _correlation_id(request: Request) -> str:
     return getattr(request.state, "correlation_id", str(uuid4()))
 

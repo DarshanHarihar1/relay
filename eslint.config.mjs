@@ -8,6 +8,14 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ["packages/contracts/scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly"
+      }
+    }
+  },
+  {
     files: ["**/*.test.{ts,tsx}"],
     languageOptions: {
       globals: {

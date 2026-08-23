@@ -15,6 +15,7 @@
     "test:web": "pnpm --filter @relay/web test",
     "check:contracts": "pnpm --filter @relay/contracts check-generated",
     "lint": "pnpm -r lint",
-    "test": "pnpm test:web && pnpm --dir services/relay-api test"
+    "test": "pnpm test:web && pnpm --dir services/relay-api test",
+    "verify:foundation": "bash scripts/verify-foundation.sh"
   }
 }

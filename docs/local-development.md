@@ -8,6 +8,7 @@ From the Relay workspace, run:
 corepack enable
 pnpm install --frozen-lockfile
 cd services/relay-api && uv sync --all-groups
+cd ../..
 cp .env.example .env.local
 pnpm dev:web
 ```
@@ -26,6 +27,21 @@ firebase emulators:start --only auth --project relay-local
 
 The emulator hosts above are the matching defaults in `.env.example`; keep
 `RELAY_ENV=local` while running against them.
+
+## Foundation verification
+
+With the Firestore emulator running, verify the same gates used in CI from the
+Relay workspace:
+
+```bash
+export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+pnpm verify:foundation
+```
+
+The command checks generated contracts, web linting and tests, API unit tests,
+then Firestore-emulator tests. It stops at the first failure and refuses to run
+the emulator tests unless `FIRESTORE_EMULATOR_HOST` points to a reachable local
+emulator; it never falls back to a cloud database.
 
 The deployment manifests read secrets only from Secret Manager. Use the secret
 names in `infra/gcp/secret-manifest.txt` with an approved injection process;
