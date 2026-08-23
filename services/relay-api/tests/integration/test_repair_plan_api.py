@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import CurrentUser, require_current_user
 from app.contracts import Disruption
-from app.domain.impact import RepairCandidate, RepairPlan
+from app.domain.impact import ActionKind, CandidateChange, CandidateKind, RepairCandidate, RepairPlan
 from app.main import app
 from app.routes.repair_plans import get_disruption_repository, get_impact_repair_planner
 
@@ -98,6 +98,48 @@ def test_request_path_and_body_disruption_ids_must_match() -> None:
         )
         assert response.status_code == 422
         assert planner.calls == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _handoff_plan() -> RepairPlan:
+    change = CandidateChange(
+        commitment_id="dinner",
+        kind=CandidateKind.REPLACE_TRANSPORT,
+        action_kinds=(ActionKind.OPEN_UBER_HANDOFF,),
+        target_ref="uber_pickup_blr",
+    )
+    candidate = RepairCandidate(
+        id="candidate_2",
+        kind="REPLACE_TRANSPORT",
+        changes=(change,),
+        invalid_reasons=(),
+        explanation="Arrange replacement transport for dinner.",
+    )
+    return RepairPlan(
+        id="plan_def456",
+        version=1,
+        assessment_id="assessment_2",
+        selected_candidate_id=candidate.id,
+        candidates=(candidate,),
+        approval_id="approval_1",
+        input_fingerprint="fp2",
+    )
+
+
+def test_handoff_action_is_not_presented_as_booked_ride() -> None:
+    planner = _FakePlanner(_handoff_plan())
+    app.dependency_overrides[require_current_user] = lambda: CurrentUser(uid=USER_ID, email=None)
+    app.dependency_overrides[get_disruption_repository] = lambda: _FakeDisruptionRepository(_disruption())
+    app.dependency_overrides[get_impact_repair_planner] = lambda: planner
+    try:
+        response = TestClient(app).post(
+            "/v1/disruptions/dis_1/repair-plans", json=REQUEST_JSON, headers=AUTH_HEADERS
+        )
+        assert response.status_code == 201
+        selected = next(c for c in planner._plan.candidates if c.id == planner._plan.selected_candidate_id)
+        assert ActionKind.OPEN_UBER_HANDOFF in selected.changes[0].action_kinds
+        assert "RIDE_BOOKED" not in response.text
     finally:
         app.dependency_overrides.clear()
 
