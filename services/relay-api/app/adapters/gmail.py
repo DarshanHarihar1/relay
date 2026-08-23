@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from app.adapters.errors import RetryableProviderError, TerminalProviderError
 from app.domain.ingestion import (
     GmailMessage,
     GmailProfile,
@@ -21,7 +22,7 @@ _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GMAIL_API_URL = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 
-class GmailRetryableError(Exception):
+class GmailRetryableError(RetryableProviderError):
     """A Gmail failure that can be retried by the bounded worker policy."""
 
 
@@ -29,7 +30,7 @@ class GmailHistoryExpiredError(Exception):
     """Gmail no longer retains the requested history cursor."""
 
 
-class GmailTerminalError(Exception):
+class GmailTerminalError(TerminalProviderError):
     """A Gmail failure that must be audited without another provider retry."""
 
 

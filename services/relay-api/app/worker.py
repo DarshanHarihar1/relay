@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from app.adapters.gmail import GmailRetryableError, GmailTerminalError
+from app.adapters.errors import RetryableProviderError, TerminalProviderError
 
 
 logger = logging.getLogger("relay.worker")
@@ -53,17 +53,17 @@ class GmailWorker:
         for delay in (*RETRY_DELAYS_SECONDS, None):
             try:
                 return await self._ingestion.ingest_gmail_notification(command)
-            except GmailTerminalError as error:
+            except TerminalProviderError as error:
                 # Terminal states are already audited by the service; retrying
                 # a revoked grant or malformed mail cannot succeed.
-                logger.warning("gmail_ingestion_terminal", extra={"reason": type(error).__name__})
+                logger.warning("ingestion_terminal", extra={"reason": type(error).__name__})
                 await self._dead_letters.publish(command, "terminal")
                 return None
-            except GmailRetryableError:
+            except RetryableProviderError:
                 if delay is None:
                     break
                 await self._delay(delay)
-        logger.warning("gmail_ingestion_exhausted_retries")
+        logger.warning("ingestion_exhausted_retries")
         await self._dead_letters.publish(command, "retries_exhausted")
         return None
 

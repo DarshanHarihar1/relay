@@ -170,6 +170,7 @@ def _published_at(value: Any) -> datetime:
 def get_gmail_pubsub_handler() -> GmailPubSubHandler:
     from os import getenv
 
+    from app.adapters.gemini import VertexGeminiExtractor, default_access_token_provider
     from app.adapters.gmail import GmailAdapter
     from app.routes.google import get_google_oauth_service
     from app.services.gmail_ingestion import (
@@ -185,6 +186,9 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
         raise RuntimeError("Missing configuration: GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT")
     oauth = get_google_oauth_service()
     repository = InMemoryGmailIngestionRepository(oauth)
+    project = getenv("GOOGLE_CLOUD_PROJECT")
+    if not project:
+        raise RuntimeError("Missing configuration: GOOGLE_CLOUD_PROJECT")
     ingestion = GmailIngestionService(
         repository=repository,
         gmail=GmailAdapter(
@@ -192,6 +196,12 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
             client_secret=settings.client_secret,
             topic=settings.gmail_topic,
             refresh_token_reader=oauth.decrypt_refresh_token,
+        ),
+        extractor=VertexGeminiExtractor(
+            project=project,
+            location=getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
+            model=getenv("RELAY_GEMINI_MODEL", "gemini-2.5-flash"),
+            access_token_provider=default_access_token_provider(),
         ),
     )
     worker = GmailWorker(ingestion=ingestion, dead_letters=InMemoryDeadLetterQueue())

@@ -18,6 +18,16 @@ from app.domain.ingestion import (
 NOW = datetime(2026, 8, 23, 8, 0, tzinfo=timezone.utc)
 
 
+class _AnyHash:
+    """A redacted message hash: present, opaque, and never the message ID."""
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, str) and len(other) == 64 and other != "m1"
+
+
+ANY_HASH = _AnyHash()
+
+
 class FakeGmail:
     def __init__(self) -> None:
         self.history_calls = 0
@@ -58,6 +68,7 @@ class FakeRepository:
         self.claimed_source_event_keys: set[str] = set()
         self.events: list[SourceEventEnvelope] = []
         self.audits: list[str] = []
+        self.details: list[dict[str, str] | None] = []
 
     async def get_connection(self, user_id):
         return self.connection if user_id == "u1" else None
@@ -80,8 +91,12 @@ class FakeRepository:
     async def release_source_event_claim(self, *, user_id, source_event_key):
         self.claimed_source_event_keys.discard(source_event_key)
 
-    async def append_ingestion_audit(self, *, user_id, outcome, correlation_id, source_event_key=None):
+    async def append_ingestion_audit(
+        self, *, user_id, outcome, correlation_id, source_event_key=None, detail=None
+    ):
         self.audits.append(outcome)
+        if detail is not None:
+            self.details.append(detail)
 
     async def put_connection(self, connection):
         self.connection = connection
@@ -255,3 +270,105 @@ async def test_terminal_failure_dead_letters_without_any_retry_delay() -> None:
 
     assert delays == []
     assert dead_letters.items == [command]
+
+
+@pytest.mark.asyncio
+async def test_bad_model_json_creates_review_not_a_disruption() -> None:
+    from app.adapters.gemini import ExtractionReviewRequired
+    from app.services.gmail_ingestion import GmailIngestionService, IngestGmailNotification
+
+    class ReviewingExtractor:
+        async def extract(self, *, message, correlation_id):
+            raise ExtractionReviewRequired("SCHEMA_INVALID")
+
+    repository = FakeRepository()
+    service = GmailIngestionService(
+        repository=repository, gmail=FakeGmail(), extractor=ReviewingExtractor()
+    )
+
+    summary = await service.ingest_gmail_notification(
+        IngestGmailNotification(
+            user_id="u1",
+            notification=GmailNotification(
+                email_address="mailbox@example.test", history_id=900, published_at=NOW
+            ),
+            correlation_id="corr-1",
+        )
+    )
+
+    assert summary.review_count == 1
+    assert summary.candidate_count == 0
+    assert repository.audits == ["EXTRACTION_REVIEW_REQUIRED"]
+    assert repository.details == [{"reason": "SCHEMA_INVALID", "message_id_hash": ANY_HASH}]
+
+
+@pytest.mark.asyncio
+async def test_extraction_records_a_candidate_without_raw_message_content() -> None:
+    from app.domain.ingestion import DisruptionCandidate
+    from app.services.gmail_ingestion import GmailIngestionService, IngestGmailNotification
+
+    class Extractor:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        async def extract(self, *, message, correlation_id):
+            self.seen.append(message.id)
+            return DisruptionCandidate(
+                change_type="flight_delay",
+                provider="Example Air",
+                booking_reference="AB12CD",
+                old_time=NOW,
+                new_time=NOW + timedelta(hours=2),
+                location_text="BLR",
+                confidence=0.9,
+                evidence_excerpt="Your flight is delayed.",
+            )
+
+    repository = FakeRepository()
+    extractor = Extractor()
+    service = GmailIngestionService(
+        repository=repository, gmail=FakeGmail(), extractor=extractor
+    )
+
+    summary = await service.ingest_gmail_notification(
+        IngestGmailNotification(
+            user_id="u1",
+            notification=GmailNotification(
+                email_address="mailbox@example.test", history_id=900, published_at=NOW
+            ),
+            correlation_id="corr-1",
+        )
+    )
+
+    assert summary.candidate_count == 1
+    assert summary.review_count == 0
+    assert extractor.seen == ["m1"]
+    persisted = repository.events[0].payload
+    assert set(persisted) == {"message_id", "history_id"}
+
+
+@pytest.mark.asyncio
+async def test_a_retryable_model_failure_releases_the_claim_for_retry() -> None:
+    from app.adapters.errors import RetryableProviderError
+    from app.services.gmail_ingestion import GmailIngestionService, IngestGmailNotification
+
+    class OverloadedExtractor:
+        async def extract(self, *, message, correlation_id):
+            raise RetryableProviderError("Vertex temporarily unavailable")
+
+    repository = FakeRepository()
+    service = GmailIngestionService(
+        repository=repository, gmail=FakeGmail(), extractor=OverloadedExtractor()
+    )
+    command = IngestGmailNotification(
+        user_id="u1",
+        notification=GmailNotification(
+            email_address="mailbox@example.test", history_id=900, published_at=NOW
+        ),
+        correlation_id="corr-1",
+    )
+
+    with pytest.raises(RetryableProviderError):
+        await service.ingest_gmail_notification(command)
+
+    assert repository.claimed_source_event_keys == set()

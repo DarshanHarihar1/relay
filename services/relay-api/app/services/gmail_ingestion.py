@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from collections.abc import Callable
 from typing import Protocol
 
 from pydantic import Field
 
+from app.adapters.errors import RetryableProviderError
+from app.adapters.gemini import ExtractionReviewRequired
 from app.adapters.gmail import (
     GmailHistoryExpiredError,
     GmailRetryableError,
@@ -13,6 +16,7 @@ from app.adapters.gmail import (
     UnsupportedGmailMessageError,
 )
 from app.contracts import ContractModel, SourceEventEnvelope
+from app.domain.ingestion import DisruptionCandidate, GmailMessage
 from app.domain.ingestion import (
     GmailNotification,
     GoogleConnection,
@@ -28,8 +32,16 @@ class IngestGmailNotification(ContractModel):
     correlation_id: str = Field(min_length=1)
 
 
+class DisruptionExtractor(Protocol):
+    async def extract(
+        self, *, message: GmailMessage, correlation_id: str
+    ) -> DisruptionCandidate | None: ...
+
+
 class IngestionSummary(ContractModel):
     persisted_count: int = Field(default=0, ge=0)
+    candidate_count: int = Field(default=0, ge=0)
+    review_count: int = Field(default=0, ge=0)
     ignored_count: int = Field(default=0, ge=0)
     duplicate_count: int = Field(default=0, ge=0)
     stale: bool = False
@@ -66,6 +78,7 @@ class GmailIngestionRepository(Protocol):
         outcome: str,
         correlation_id: str,
         source_event_key: str | None = None,
+        detail: dict[str, str] | None = None,
     ) -> None: ...
 
     async def put_connection(self, connection: GoogleConnection) -> None: ...
@@ -90,10 +103,12 @@ class GmailIngestionService:
         *,
         repository: GmailIngestionRepository,
         gmail: GmailPort,
+        extractor: DisruptionExtractor | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._gmail = gmail
+        self._extractor = extractor
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     async def ingest_gmail_notification(self, command: IngestGmailNotification) -> IngestionSummary:
@@ -168,6 +183,12 @@ class GmailIngestionService:
                 # The body remains in process only. The durable event has no subject,
                 # sender, body, attachment, or header content.
                 summary.persisted_count += 1
+                await self._extract(
+                    command=command,
+                    message=message,
+                    source_event_key=source_event_key,
+                    summary=summary,
+                )
 
         await self._repository.update_gmail_cursor_if_newer(
             user_id=command.user_id,
@@ -175,6 +196,42 @@ class GmailIngestionService:
             proposed_history_id=highest_history_id,
         )
         return summary
+
+    async def _extract(
+        self,
+        *,
+        command: IngestGmailNotification,
+        message: GmailMessage,
+        source_event_key: str,
+        summary: IngestionSummary,
+    ) -> DisruptionCandidate | None:
+        """Ask the model for a candidate. Model output never creates a disruption here."""
+        if self._extractor is None:
+            return None
+        try:
+            candidate = await self._extractor.extract(
+                message=message, correlation_id=command.correlation_id
+            )
+        except ExtractionReviewRequired as review:
+            # A rejected extraction is not retried and never becomes a disruption.
+            summary.review_count += 1
+            await self._audit(
+                command,
+                "EXTRACTION_REVIEW_REQUIRED",
+                source_event_key,
+                detail={"reason": review.reason, "message_id_hash": _message_hash(message.id)},
+            )
+            return None
+        except RetryableProviderError:
+            # The claim must be released so the bounded retry can run again.
+            await self._repository.release_source_event_claim(
+                user_id=command.user_id, source_event_key=source_event_key
+            )
+            raise
+        if candidate is None:
+            return None
+        summary.candidate_count += 1
+        return candidate
 
     async def _connection_for_command(self, command: IngestGmailNotification) -> GoogleConnection:
         connection = await self._repository.get_connection(command.user_id)
@@ -214,12 +271,14 @@ class GmailIngestionService:
         command: IngestGmailNotification,
         outcome: str,
         source_event_key: str | None = None,
+        detail: dict[str, str] | None = None,
     ) -> None:
         await self._repository.append_ingestion_audit(
             user_id=command.user_id,
             outcome=outcome,
             correlation_id=command.correlation_id,
             source_event_key=source_event_key,
+            detail=detail,
         )
 
 
@@ -338,12 +397,19 @@ class InMemoryGmailIngestionRepository:
         outcome: str,
         correlation_id: str,
         source_event_key: str | None = None,
+        detail: dict[str, str] | None = None,
     ) -> None:
-        del source_event_key
+        del source_event_key, detail
         self.audits.append((user_id, outcome))
 
 
+def _message_hash(message_id: str) -> str:
+    """A stable, redacted reference. The raw message ID never reaches an audit."""
+    return sha256(message_id.encode("utf-8")).hexdigest()
+
+
 __all__ = [
+    "DisruptionExtractor",
     "GmailIngestionService",
     "InMemoryGmailIngestionRepository",
     "GmailWatchService",
