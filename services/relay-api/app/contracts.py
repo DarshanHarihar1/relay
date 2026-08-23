@@ -48,7 +48,7 @@ class VoiceCallAuthorizationSnapshot(ContractModel):
     recipient_ref: NonEmptyString
     identity_disclosure: NonEmptyString
     authorized_options: list[NonEmptyString] = Field(min_length=1)
-    max_fee_inr: int = Field(ge=1, le=100000)
+    max_fee_inr: int = Field(ge=0, le=100000)
     must_not: list[NonEmptyString]
     required_evidence: list[NonEmptyString] = Field(min_length=1)
     expires_at: AwareDatetime

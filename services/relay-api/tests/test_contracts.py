@@ -48,7 +48,7 @@ def test_source_event_requires_a_stable_idempotency_key():
         )
 
 
-def test_voice_call_requires_positive_fee_and_timezone_aware_expiry():
+def test_voice_call_allows_zero_fee_but_requires_timezone_aware_expiry():
     action = minimal_action() | {
         "type": "voice_call",
         "authorization_snapshot": {
