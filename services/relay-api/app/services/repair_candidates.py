@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from app.contracts import Commitment
 from app.domain.impact import (
@@ -11,6 +11,7 @@ from app.domain.impact import (
     ImpactAssessment,
     PlanningOptions,
     RepairCandidate,
+    RepairScore,
     sha256_id,
 )
 from app.services.feasibility import is_protected
@@ -21,6 +22,10 @@ WEIGHT_FINANCIAL_COST_INR = 1
 WEIGHT_SOCIAL_COORDINATION = 40
 WEIGHT_PREFERENCE_VIOLATION = 30
 WEIGHT_AVOIDABLE_DELAY_MINUTE = 10
+
+# Only these candidate kinds actually move, cancel, or replace a commitment.
+# KEEP_AS_IS and CONFIRM_LATE_ARRIVAL leave the schedule itself untouched.
+_SCHEDULE_CHANGING_KINDS = frozenset({CandidateKind.RESCHEDULE, CandidateKind.CANCEL, CandidateKind.REPLACE_TRANSPORT})
 
 
 def validate_candidate(
@@ -195,3 +200,67 @@ class CandidateFactory:
             assessment=assessment,
             commitments=commitments,
         )
+
+
+def _avoidable_delay_minutes(candidate: RepairCandidate, assessment: ImpactAssessment) -> int:
+    original_by_id = {node.commitment_id: node for node in assessment.nodes}
+    total = 0
+    for projected in candidate.projected_nodes:
+        original = original_by_id.get(projected.commitment_id)
+        if original is None:
+            continue
+        delta_minutes = (projected.effective_start - original.effective_start).total_seconds() / 60
+        if delta_minutes > 0:
+            total += int(delta_minutes)
+    return total
+
+
+def score_candidate(
+    candidate: RepairCandidate,
+    assessment: ImpactAssessment,
+    commitments: Mapping[str, Commitment],
+) -> RepairScore:
+    invariant_violations = len(validate_candidate(candidate, assessment, commitments))
+    missed_critical_commitments = sum(
+        1
+        for node in candidate.projected_nodes
+        if node.status is FeasibilityStatus.VIOLATED
+        and (commitment := commitments.get(node.commitment_id)) is not None
+        and commitment.criticality == "CRITICAL"
+    )
+    changed_commitments = len(
+        {change.commitment_id for change in candidate.changes if change.kind in _SCHEDULE_CHANGING_KINDS}
+    )
+    financial_cost_inr = sum(change.financial_cost_inr for change in candidate.changes)
+    social_coordination_units = sum(change.social_coordination_units for change in candidate.changes)
+    preference_violation_units = sum(change.preference_violation_units for change in candidate.changes)
+    avoidable_delay_minutes = _avoidable_delay_minutes(candidate, assessment)
+    weighted_total = (
+        WEIGHT_MISSED_CRITICAL * missed_critical_commitments
+        + WEIGHT_CHANGED_COMMITMENT * changed_commitments
+        + WEIGHT_FINANCIAL_COST_INR * financial_cost_inr
+        + WEIGHT_SOCIAL_COORDINATION * social_coordination_units
+        + WEIGHT_PREFERENCE_VIOLATION * preference_violation_units
+        + WEIGHT_AVOIDABLE_DELAY_MINUTE * avoidable_delay_minutes
+    )
+    return RepairScore(
+        invariant_violations=invariant_violations,
+        missed_critical_commitments=missed_critical_commitments,
+        changed_commitments=changed_commitments,
+        financial_cost_inr=financial_cost_inr,
+        social_coordination_units=social_coordination_units,
+        preference_violation_units=preference_violation_units,
+        avoidable_delay_minutes=avoidable_delay_minutes,
+        weighted_total=weighted_total,
+    )
+
+
+def select_candidate(candidates: Sequence[RepairCandidate]) -> RepairCandidate | None:
+    eligible = [
+        candidate
+        for candidate in candidates
+        if candidate.score is not None and not candidate.invalid_reasons and candidate.score.invariant_violations == 0
+    ]
+    if not eligible:
+        return None
+    return min(eligible, key=lambda candidate: candidate.score.sort_key(candidate.id))
