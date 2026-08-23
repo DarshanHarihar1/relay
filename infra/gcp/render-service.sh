@@ -37,7 +37,7 @@ template="${repo_root}/infra/gcp/cloudrun/${service}.service.yaml"
 sed \
   -e "s|REGION-docker.pkg.dev|${region}-docker.pkg.dev|g" \
   -e "s|relay/${service}:latest|relay/${service}:${tag}|g" \
-  -e "s|PROJECT_ID|${project}|g" \
+  -e "s|__PROJECT_ID__|${project}|g" \
   -e "s|https://SERVICE_URL|${service_url}|g" \
   -e "s|Label_REPLACE_ME|${gmail_label}|g" \
   "$template"

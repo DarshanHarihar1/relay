@@ -11,9 +11,9 @@ metadata:
 spec:
   template:
     spec:
-      serviceAccountName: relay-worker-sa@PROJECT_ID.iam.gserviceaccount.com
+      serviceAccountName: relay-worker-sa@__PROJECT_ID__.iam.gserviceaccount.com
       containers:
-        - image: REGION-docker.pkg.dev/PROJECT_ID/relay/relay-worker:latest
+        - image: REGION-docker.pkg.dev/__PROJECT_ID__/relay/relay-worker:latest
           env:
             - name: VAPI_PRIVATE_KEY
               valueFrom:
