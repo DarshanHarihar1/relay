@@ -53,6 +53,35 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pytest -m "not emulator"
 
+  product-e2e:
+    needs: api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/relay-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked --all-groups
+      - run: uv run pytest tests/e2e -q -m e2e
+
+  browser-e2e:
+    if: ${{ vars.RELAY_E2E_ENABLED == 'true' }}
+    needs: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dlx @playwright/test@1.51.1 install --with-deps chromium
+      - run: pnpm dlx @playwright/test@1.51.1 test --config=apps/web/playwright.config.ts
+        env:
+          RELAY_E2E_BASE_URL: ${{ vars.RELAY_E2E_BASE_URL }}
+
   firestore-integration:
     needs: api
     runs-on: ubuntu-latest

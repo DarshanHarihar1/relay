@@ -23,6 +23,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
   "emulator: requires the local Firestore emulator",
+  "e2e: runs the deterministic Relay product lifecycle harness",
 ]
 pythonpath = ["."]
 testpaths = ["tests"]
