@@ -1,4 +1,4 @@
-// Generated from openapi/relay.yaml (sha256:d14b221b2414e035b49a2e7ac3bea9b688d1308fbcfafbd3fa605b28dae8c95a). Do not edit manually.
+// Generated from openapi/relay.yaml (sha256:8f3e3979bfea8ecf427b5b6ccc8670fde45a3d7906410a0849b916c55fe6f8dd). Do not edit manually.
 import { z } from "zod";
 
 export const actionStates = [

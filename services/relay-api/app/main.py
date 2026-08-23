@@ -23,6 +23,7 @@ from .contracts import (
     ProviderEvent,
     SourceEventEnvelope,
 )
+from .routes.actions import router as actions_router
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -36,6 +37,7 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI(title="Relay API", version="0.1.0")
 app.add_middleware(CorrelationIdMiddleware)
+app.include_router(actions_router)
 
 
 def _correlation_id(request: Request) -> str:
@@ -82,20 +84,6 @@ async def get_current_user(current_user: CurrentUser = Depends(require_current_u
 @app.get("/v1/actions/{action_id}", response_model=ActionRecord, responses={401: {"model": Problem}, 404: {"model": Problem}})
 async def get_action(action_id: str, current_user: CurrentUser = Depends(require_current_user)) -> ActionRecord:
     del action_id, current_user
-    raise HTTPException(status_code=404)
-
-
-@app.post(
-    "/v1/approvals/{approval_id}/decision",
-    response_model=ApprovalDecisionResponse,
-    responses={401: {"model": Problem}, 404: {"model": Problem}, 409: {"model": Problem}},
-)
-async def decide_approval(
-    approval_id: str,
-    decision: ApprovalDecisionRequest,
-    current_user: CurrentUser = Depends(require_current_user),
-) -> ApprovalDecisionResponse:
-    del approval_id, decision, current_user
     raise HTTPException(status_code=404)
 
 

@@ -31,7 +31,7 @@ async def firestore_client() -> AsyncIterator[AsyncClient]:
     try:
         yield client
     finally:
-        await client.close()
+        client.close()
 
 
 @pytest_asyncio.fixture

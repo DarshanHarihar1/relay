@@ -105,6 +105,8 @@ class ActionRecord(ContractModel):
     def validate_snapshot_type(self) -> "ActionRecord":
         if self.type != self.authorization_snapshot.type:
             raise ValueError("Authorization snapshot type must match action type")
+        if self.state is ActionState.HANDOFF_OPENED and self.type != "uber_deep_link":
+            raise ValueError("Only an Uber deep link action can enter handoff_opened")
         return self
 
 
@@ -112,7 +114,7 @@ class Approval(ContractModel):
     id: NonEmptyString
     user_id: NonEmptyString
     action_ids: list[NonEmptyString] = Field(min_length=1)
-    state: Literal["pending", "approved", "declined"]
+    state: Literal["awaiting_approval", "approved", "declined"]
     version: int = Field(ge=1)
     correlation_id: NonEmptyString
     created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
