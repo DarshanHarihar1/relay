@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from secrets import token_urlsafe
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -75,9 +76,13 @@ class ContactSelectionService:
         self._cipher = cipher
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._searches: dict[str, deque[datetime]] = {}
-        self._current_choices: dict[str, tuple[datetime, set[tuple[str, str]]]] = {}
+        self._current_choices: dict[str, tuple[str, datetime, list[PickerContact]]] = {}
 
     async def search_picker_contacts(self, *, user_id: str, query: str) -> list[PickerContact]:
+        _, contacts = await self.search_picker_session(user_id=user_id, query=query)
+        return contacts
+
+    async def search_picker_session(self, *, user_id: str, query: str) -> tuple[str, list[PickerContact]]:
         normalized_query = " ".join(query.split())
         if len(normalized_query) < 2:
             raise ValueError("Contact search requires at least two characters")
@@ -86,30 +91,47 @@ class ContactSelectionService:
         contacts = await self._people.search_contacts(
             connection=connection, query=normalized_query, page_size=20
         )
-        self._current_choices[user_id] = (
-            self._now(),
-            {
-                (contact.display_name, phone.number)
-                for contact in contacts
-                for phone in contact.phones
-            },
-        )
-        return contacts
+        session_id = token_urlsafe(18)
+        self._current_choices[user_id] = (session_id, self._now(), contacts)
+        return session_id, contacts
 
-    async def select_pickup_contact(
-        self, *, user_id: str, commitment_id: str, choice: ContactChoice
-    ) -> SelectedContact:
-        self._validate_commitment_id(commitment_id)
+    async def select_picker_contact(
+        self, *, user_id: str, session_id: str, contact_index: int
+    ) -> ContactChoice:
+        current = self._current_choices.get(user_id)
+        if current is None or current[0] != session_id:
+            raise ValueError("Choose a phone from the current picker results")
+        _, searched_at, contacts = current
+        if self._now() - searched_at > self._PICKER_RESULT_TTL:
+            self._current_choices.pop(user_id, None)
+            raise ValueError("Choose a phone from the current picker results")
+        if contact_index < 0 or contact_index >= len(contacts) or not contacts[contact_index].phones:
+            raise ValueError("Choose a phone from the current picker results")
+        contact = contacts[contact_index]
+        return ContactChoice(
+            display_name=contact.display_name,
+            phone_number=contact.phones[0].number,
+            source="google_picker",
+        )
+
+    async def build_selected_contact(self, *, user_id: str, choice: ContactChoice) -> SelectedContact:
+        self._validate_commitment_id("contact-selection")
         if choice.source == "google_picker":
             await self._contacts_connection(user_id)
             self._require_current_picker_choice(user_id, choice)
-        selected = SelectedContact(
+        return SelectedContact(
             display_name=choice.display_name,
             encrypted_phone_number=self._cipher.encrypt(choice.phone_number),
             phone_last4="".join(character for character in choice.phone_number if character.isdigit())[-4:],
             source=choice.source,
             selected_at=self._now(),
         )
+
+    async def select_pickup_contact(
+        self, *, user_id: str, commitment_id: str, choice: ContactChoice
+    ) -> SelectedContact:
+        self._validate_commitment_id(commitment_id)
+        selected = await self.build_selected_contact(user_id=user_id, choice=choice)
         await self._selections.save_selected_contact(
             user_id=user_id, commitment_id=commitment_id, selected=selected
         )
@@ -143,10 +165,15 @@ class ContactSelectionService:
         current = self._current_choices.get(user_id)
         if current is None:
             raise ValueError("Choose a phone from the current picker results")
-        searched_at, choices = current
+        _, searched_at, contacts = current
         if self._now() - searched_at > self._PICKER_RESULT_TTL:
             self._current_choices.pop(user_id, None)
             raise ValueError("Choose a phone from the current picker results")
+        choices = {
+            (contact.display_name, phone.number)
+            for contact in contacts
+            for phone in contact.phones
+        }
         if (choice.display_name, choice.phone_number) not in choices:
             raise ValueError("Choose a phone from the current picker results")
 

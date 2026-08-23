@@ -311,6 +311,8 @@ class Commitment(ContractModel):
     required_buffer_minutes: int = Field(default=0, ge=0)
     participants: list[NonEmptyString] = Field(default_factory=list)
     protected: bool = False
+    pickup_selection: Literal["no_pickup", "selected"] | None = None
+    pickup_command_fingerprint: NonEmptyString | None = None
 
 
 class Edge(ContractModel):

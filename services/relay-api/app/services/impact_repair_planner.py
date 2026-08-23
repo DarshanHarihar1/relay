@@ -62,7 +62,14 @@ class ImpactRepairPlanner:
             "ifp",
             {
                 "disruption": disruption,
-                "commitments": commitments,
+                # Pickup declaration is a Phase 5 user decision. It must not
+                # change the Phase 3 plan identity or candidate tie-breaks.
+                "commitments": {
+                    commitment_id: commitment.model_dump(
+                        exclude={"pickup_selection", "pickup_command_fingerprint"}
+                    )
+                    for commitment_id, commitment in commitments.items()
+                },
                 "edges": subgraph.edges,
                 "options": options,
                 "policy": user_policy,

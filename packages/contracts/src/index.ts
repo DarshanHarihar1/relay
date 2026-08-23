@@ -1,4 +1,4 @@
-// Generated from openapi/relay.yaml (sha256:9161ed0e882f23466ad994b3ed4ddfdf5a2fea44d4607e46e605c1161843b94c). Do not edit manually.
+// Generated from openapi/relay.yaml (sha256:daa53dfbf39da2273abf2964cf270ddd116bb84780006c47c3cee5474f53847d). Do not edit manually.
 import { z } from "zod";
 
 export const actionStates = ["planned", "awaiting_approval", "authorized", "dispatched", "in_progress", "succeeded", "needs_user", "retryable_failure", "failed", "verified", "handoff_opened"] as const;
@@ -162,7 +162,7 @@ export const actionDispatchRecordSchema = z.object({
 }).strict();
 export type ActionDispatchRecord = z.infer<typeof actionDispatchRecordSchema>;
 
-export const commitmentSchema = z.object({ id: nonEmptyString, user_id: nonEmptyString, source_event_key: nonEmptyString, summary: nonEmptyString, starts_at: awareDateTime, ends_at: awareDateTime }).strict();
+export const commitmentSchema = z.object({ id: nonEmptyString, user_id: nonEmptyString, source_event_key: nonEmptyString, summary: nonEmptyString, starts_at: awareDateTime, ends_at: awareDateTime, pickup_selection: z.enum(["no_pickup", "selected"]).nullable().optional(), pickup_command_fingerprint: nonEmptyString.nullable().optional() }).strict();
 export type Commitment = z.infer<typeof commitmentSchema>;
 export const edgeSchema = z.object({ id: nonEmptyString, from_ref: nonEmptyString, to_ref: nonEmptyString, relation: nonEmptyString }).strict();
 export type Edge = z.infer<typeof edgeSchema>;
