@@ -132,7 +132,9 @@ class CandidateFactory:
         return draft.model_copy(update={"invalid_reasons": reasons})
 
     def _keep_as_is(self, commitment_id, commitment, assessment, commitments) -> RepairCandidate:
-        change = CandidateChange(commitment_id=commitment_id, kind=CandidateKind.KEEP_AS_IS)
+        change = CandidateChange(
+            commitment_id=commitment_id, kind=CandidateKind.KEEP_AS_IS, target_ref=commitment.location_place_id
+        )
         return self._finalize(
             kind=CandidateKind.KEEP_AS_IS,
             change=change,
@@ -149,6 +151,7 @@ class CandidateFactory:
             proposed_end=option.end,
             financial_cost_inr=option.max_fee_inr,
             action_kinds=(ActionKind.CALL_VENUE,),
+            target_ref=option.target_ref,
         )
         return self._finalize(
             kind=CandidateKind.RESCHEDULE,
@@ -160,7 +163,10 @@ class CandidateFactory:
 
     def _cancel(self, commitment_id, commitment, assessment, commitments) -> RepairCandidate:
         change = CandidateChange(
-            commitment_id=commitment_id, kind=CandidateKind.CANCEL, action_kinds=(ActionKind.CALL_VENUE,)
+            commitment_id=commitment_id,
+            kind=CandidateKind.CANCEL,
+            action_kinds=(ActionKind.CALL_VENUE,),
+            target_ref=commitment.location_place_id,
         )
         return self._finalize(
             kind=CandidateKind.CANCEL,
@@ -178,6 +184,7 @@ class CandidateFactory:
             proposed_end=option.end,
             financial_cost_inr=option.cost_inr,
             action_kinds=(ActionKind.OPEN_UBER_HANDOFF,),
+            target_ref=option.target_ref,
         )
         return self._finalize(
             kind=CandidateKind.REPLACE_TRANSPORT,
@@ -192,6 +199,7 @@ class CandidateFactory:
             commitment_id=commitment_id,
             kind=CandidateKind.CONFIRM_LATE_ARRIVAL,
             action_kinds=(ActionKind.CALL_VENUE,),
+            target_ref=target_ref,
         )
         return self._finalize(
             kind=CandidateKind.CONFIRM_LATE_ARRIVAL,

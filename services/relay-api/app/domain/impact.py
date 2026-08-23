@@ -102,6 +102,10 @@ class CandidateChange(ImpactModel):
     social_coordination_units: int = Field(default=0, ge=0)
     preference_violation_units: int = Field(default=0, ge=0)
     action_kinds: tuple[ActionKind, ...] = ()
+    # Not in the original plan text: Task 7 needs to know who an action_kind's
+    # call or handoff targets, and the plan never carried that from
+    # RescheduleOption/TransportOption.target_ref through to here.
+    target_ref: str | None = None
 
 
 class RepairScore(ImpactModel):
