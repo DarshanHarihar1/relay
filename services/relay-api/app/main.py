@@ -41,6 +41,18 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# basicConfig() is a safety net for the case where nothing else configures a
+# handler at all (e.g. running outside uvicorn/pytest). It is a no-op if a
+# handler already exists on root, which is the common case here.
+logging.basicConfig(level=logging.INFO)
+
+# The real fix: without an explicit level, "relay.*" loggers inherit root's
+# default WARNING, so every INFO-level operational log (extraction outcomes,
+# ingestion summaries, daily maintenance counts) is silently dropped even
+# though a handler exists. Setting the level here fixes it regardless of
+# whether uvicorn or pytest already attached a handler to root first.
+logging.getLogger("relay").setLevel(logging.INFO)
+
 # Every Relay logger is filtered, so a sensitive value cannot reach a log sink
 # even if a future call site passes one by mistake.
 logging.getLogger("relay").addFilter(RedactingLogFilter())
