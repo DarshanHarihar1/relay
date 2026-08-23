@@ -153,6 +153,20 @@ class Edge(ContractModel):
     relation: NonEmptyString
 
 
+class Provenance(ContractModel):
+    """How a persisted record came to exist, and how sure the source was."""
+
+    source: Literal["gmail", "calendar", "vapi"]
+    confidence: float = Field(ge=0, le=1)
+
+
+class GmailEvidenceRef(ContractModel):
+    """The Gmail message and history point a disruption was read from."""
+
+    message_id: NonEmptyString
+    history_id: int = Field(ge=0)
+
+
 class Disruption(ContractModel):
     id: NonEmptyString
     user_id: NonEmptyString
@@ -163,6 +177,20 @@ class Disruption(ContractModel):
     updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     version: int = Field(default=1, ge=1)
     correlation_id: NonEmptyString | None = None
+    # Phase 2 extension. Every field below is optional so a Phase 1 disruption
+    # still validates, and this stays the one canonical disruption record.
+    commitment_id: NonEmptyString | None = None
+    gmail_source: GmailEvidenceRef | None = None
+    provider: str | None = None
+    encrypted_booking_reference: NonEmptyString | None = None
+    previous_time: AwareDatetime | None = None
+    new_time: AwareDatetime | None = None
+    location_text: str | None = None
+    evidence_excerpt: str | None = Field(default=None, max_length=500)
+    model_version: NonEmptyString | None = None
+    match_score: int | None = Field(default=None, ge=0)
+    match_reasons: list[NonEmptyString] = Field(default_factory=list)
+    provenance: Provenance | None = None
 
 
 class ProviderEvent(ContractModel):

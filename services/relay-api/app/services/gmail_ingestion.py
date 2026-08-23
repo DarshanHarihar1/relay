@@ -16,7 +16,7 @@ from app.adapters.gmail import (
     UnsupportedGmailMessageError,
 )
 from app.contracts import ContractModel, SourceEventEnvelope
-from app.domain.ingestion import DisruptionCandidate, GmailMessage
+from app.domain.ingestion import DisruptionCandidate, GmailMessage, MatchResult
 from app.domain.ingestion import (
     GmailNotification,
     GoogleConnection,
@@ -38,10 +38,28 @@ class DisruptionExtractor(Protocol):
     ) -> DisruptionCandidate | None: ...
 
 
+class CommitmentMatcher(Protocol):
+    async def match(
+        self, *, user_id: str, candidate: DisruptionCandidate, received_at: datetime
+    ) -> MatchResult: ...
+
+    async def create_disruption_from_match(
+        self,
+        *,
+        user_id: str,
+        message: GmailMessage,
+        candidate: DisruptionCandidate,
+        match: MatchResult,
+        source_event_key: str,
+        correlation_id: str,
+    ) -> bool: ...
+
+
 class IngestionSummary(ContractModel):
     persisted_count: int = Field(default=0, ge=0)
     candidate_count: int = Field(default=0, ge=0)
     review_count: int = Field(default=0, ge=0)
+    disruption_count: int = Field(default=0, ge=0)
     ignored_count: int = Field(default=0, ge=0)
     duplicate_count: int = Field(default=0, ge=0)
     stale: bool = False
@@ -104,11 +122,13 @@ class GmailIngestionService:
         repository: GmailIngestionRepository,
         gmail: GmailPort,
         extractor: DisruptionExtractor | None = None,
+        matcher: CommitmentMatcher | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._gmail = gmail
         self._extractor = extractor
+        self._matcher = matcher
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     async def ingest_gmail_notification(self, command: IngestGmailNotification) -> IngestionSummary:
@@ -183,12 +203,20 @@ class GmailIngestionService:
                 # The body remains in process only. The durable event has no subject,
                 # sender, body, attachment, or header content.
                 summary.persisted_count += 1
-                await self._extract(
+                candidate = await self._extract(
                     command=command,
                     message=message,
                     source_event_key=source_event_key,
                     summary=summary,
                 )
+                if candidate is not None:
+                    await self._match(
+                        command=command,
+                        message=message,
+                        candidate=candidate,
+                        source_event_key=source_event_key,
+                        summary=summary,
+                    )
 
         await self._repository.update_gmail_cursor_if_newer(
             user_id=command.user_id,
@@ -232,6 +260,47 @@ class GmailIngestionService:
             return None
         summary.candidate_count += 1
         return candidate
+
+    async def _match(
+        self,
+        *,
+        command: IngestGmailNotification,
+        message: GmailMessage,
+        candidate: DisruptionCandidate,
+        source_event_key: str,
+        summary: IngestionSummary,
+    ) -> None:
+        """Persist a disruption only on a decisive match. Review mutates nothing."""
+        if self._matcher is None:
+            return
+        result = await self._matcher.match(
+            user_id=command.user_id,
+            candidate=candidate,
+            received_at=command.notification.published_at,
+        )
+        if result.status != "matched":
+            if result.status == "needs_review":
+                summary.review_count += 1
+                await self._audit(
+                    command,
+                    "MATCH_REVIEW_REQUIRED",
+                    source_event_key,
+                    detail={
+                        "reasons": ",".join(result.reasons),
+                        "message_id_hash": _message_hash(message.id),
+                    },
+                )
+            return
+        created = await self._matcher.create_disruption_from_match(
+            user_id=command.user_id,
+            message=message,
+            candidate=candidate,
+            match=result,
+            source_event_key=source_event_key,
+            correlation_id=command.correlation_id,
+        )
+        if created:
+            summary.disruption_count += 1
 
     async def _connection_for_command(self, command: IngestGmailNotification) -> GoogleConnection:
         connection = await self._repository.get_connection(command.user_id)
@@ -409,6 +478,7 @@ def _message_hash(message_id: str) -> str:
 
 
 __all__ = [
+    "CommitmentMatcher",
     "DisruptionExtractor",
     "GmailIngestionService",
     "InMemoryGmailIngestionRepository",

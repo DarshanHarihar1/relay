@@ -170,6 +170,8 @@ def _published_at(value: Any) -> datetime:
 def get_gmail_pubsub_handler() -> GmailPubSubHandler:
     from os import getenv
 
+    from google.cloud.firestore_v1 import AsyncClient
+
     from app.adapters.gemini import VertexGeminiExtractor, default_access_token_provider
     from app.adapters.gmail import GmailAdapter
     from app.routes.google import get_google_oauth_service
@@ -177,6 +179,9 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
         GmailIngestionService,
         InMemoryGmailIngestionRepository,
     )
+    from app.repositories.disruptions import FirestoreDisruptionRepository
+    from app.security import FernetFieldCipher
+    from app.services.commitment_matcher import ConservativeCommitmentMatcher
     from app.settings import GoogleOAuthSettings
     from app.worker import GmailWorker, InMemoryDeadLetterQueue, LocalIngestionQueue
 
@@ -189,6 +194,11 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
     project = getenv("GOOGLE_CLOUD_PROJECT")
     if not project:
         raise RuntimeError("Missing configuration: GOOGLE_CLOUD_PROJECT")
+    encryption_key = getenv("APP_ENCRYPTION_KEY")
+    if not encryption_key:
+        raise RuntimeError("Missing configuration: APP_ENCRYPTION_KEY")
+    model = getenv("RELAY_GEMINI_MODEL", "gemini-2.5-flash")
+    disruptions = FirestoreDisruptionRepository(AsyncClient(project=project))
     ingestion = GmailIngestionService(
         repository=repository,
         gmail=GmailAdapter(
@@ -200,8 +210,14 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
         extractor=VertexGeminiExtractor(
             project=project,
             location=getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
-            model=getenv("RELAY_GEMINI_MODEL", "gemini-2.5-flash"),
+            model=model,
             access_token_provider=default_access_token_provider(),
+        ),
+        matcher=ConservativeCommitmentMatcher(
+            commitments=disruptions,
+            disruptions=disruptions,
+            cipher=FernetFieldCipher(encryption_key),
+            model_version=model,
         ),
     )
     worker = GmailWorker(ingestion=ingestion, dead_letters=InMemoryDeadLetterQueue())

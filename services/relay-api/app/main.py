@@ -19,7 +19,9 @@ from .contracts import (
     Commitment,
     Disruption,
     Edge,
+    GmailEvidenceRef,
     Problem,
+    Provenance,
     ProviderEvent,
     SourceEventEnvelope,
 )
@@ -112,7 +114,9 @@ def _openapi_models() -> list[type]:
         Commitment,
         Disruption,
         Edge,
+        GmailEvidenceRef,
         Problem,
+        Provenance,
         ProviderEvent,
         SourceEventEnvelope,
     ]

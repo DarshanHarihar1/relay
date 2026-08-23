@@ -372,3 +372,98 @@ async def test_a_retryable_model_failure_releases_the_claim_for_retry() -> None:
         await service.ingest_gmail_notification(command)
 
     assert repository.claimed_source_event_keys == set()
+
+
+class FakeMatcher:
+    def __init__(self, result) -> None:
+        self.result = result
+        self.created: list[tuple] = []
+        self.matched: list[str] = []
+
+    async def match(self, *, user_id, candidate, received_at):
+        self.matched.append(user_id)
+        return self.result
+
+    async def create_disruption_from_match(
+        self, *, user_id, message, candidate, match, source_event_key, correlation_id
+    ):
+        if match.status != "matched":
+            return False
+        self.created.append((match.commitment_id, source_event_key))
+        return True
+
+
+class CandidateExtractor:
+    async def extract(self, *, message, correlation_id):
+        from app.domain.ingestion import DisruptionCandidate
+
+        return DisruptionCandidate(
+            change_type="flight_delay",
+            provider="Example Air",
+            booking_reference="AB12CD",
+            old_time=NOW,
+            new_time=NOW + timedelta(hours=2),
+            location_text="BLR",
+            confidence=0.9,
+            evidence_excerpt="Your flight is delayed.",
+        )
+
+
+def _command():
+    from app.services.gmail_ingestion import IngestGmailNotification
+
+    return IngestGmailNotification(
+        user_id="u1",
+        notification=GmailNotification(
+            email_address="mailbox@example.test", history_id=900, published_at=NOW
+        ),
+        correlation_id="corr-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_matched_candidate_persists_exactly_one_disruption() -> None:
+    from app.domain.ingestion import MatchResult
+    from app.services.gmail_ingestion import GmailIngestionService
+
+    matcher = FakeMatcher(
+        MatchResult(
+            status="matched", commitment_id="flight_AB12", score=100, reasons=["booking_reference"]
+        )
+    )
+    service = GmailIngestionService(
+        repository=FakeRepository(),
+        gmail=FakeGmail(),
+        extractor=CandidateExtractor(),
+        matcher=matcher,
+    )
+
+    summary = await service.ingest_gmail_notification(_command())
+
+    assert summary.disruption_count == 1
+    assert summary.review_count == 0
+    assert matcher.created == [("flight_AB12", "gmail:m1:900")]
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_match_reviews_and_persists_no_disruption() -> None:
+    from app.domain.ingestion import MatchResult
+    from app.services.gmail_ingestion import GmailIngestionService
+
+    matcher = FakeMatcher(
+        MatchResult(status="needs_review", score=45, reasons=["ambiguous_match"])
+    )
+    repository = FakeRepository()
+    service = GmailIngestionService(
+        repository=repository,
+        gmail=FakeGmail(),
+        extractor=CandidateExtractor(),
+        matcher=matcher,
+    )
+
+    summary = await service.ingest_gmail_notification(_command())
+
+    assert summary.disruption_count == 0
+    assert summary.review_count == 1
+    assert matcher.created == []
+    assert repository.audits == ["MATCH_REVIEW_REQUIRED"]
