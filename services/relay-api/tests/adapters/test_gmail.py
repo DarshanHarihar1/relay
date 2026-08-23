@@ -65,7 +65,7 @@ async def test_history_pages_and_message_bodies_are_label_scoped_and_sanitized()
         if request.url.path.endswith("/history"):
             assert request.url.params["startHistoryId"] == "800"
             assert request.url.params["labelId"] == "Label_123"
-            assert request.url.params.get_list("historyTypes") == ["messageAdded"]
+            assert request.url.params.get_list("historyTypes") == ["messageAdded", "labelAdded"]
             return httpx.Response(
                 200,
                 json={
@@ -194,3 +194,53 @@ async def test_profile_resolves_the_mailbox_and_current_history_id() -> None:
 
     assert profile.email_address == "mailbox@example.test"
     assert profile.history_id == 900
+
+
+@pytest.mark.asyncio
+async def test_history_catches_a_label_applied_after_the_message_already_arrived() -> None:
+    """A user labelling mail manually (or via a delayed filter) produces a
+    labelAdded history event, not messageAdded. Both must be treated as new
+    work, or manually-labelled mail is silently never ingested."""
+    from app.adapters.gmail import GmailAdapter
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "oauth2.googleapis.com":
+            return httpx.Response(200, json={"access_token": "access-token"})
+        assert request.url.params.get_list("historyTypes") == ["messageAdded", "labelAdded"]
+        return httpx.Response(
+            200,
+            json={
+                "historyId": "900",
+                "history": [
+                    {
+                        "id": "850",
+                        "labelsAdded": [
+                            {
+                                "message": {"id": "m2", "labelIds": ["Label_123", "INBOX"]},
+                                "labelIds": ["Label_123"],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    cipher = FernetFieldCipher(FernetFieldCipher.generate_key())
+    adapter = GmailAdapter(
+        client_id="client-id",
+        client_secret="client-secret",
+        topic="projects/relay/topics/gmail-events",
+        refresh_token_reader=lambda connection: cipher.decrypt(connection.encrypted_refresh_token),
+        transport=httpx.MockTransport(handler),
+    )
+    connection = GoogleConnection(
+        user_id="u1",
+        granted_scopes=frozenset({"https://www.googleapis.com/auth/gmail.readonly"}),
+        gmail_label_id="Label_123",
+        encrypted_refresh_token=cipher.encrypt("refresh-token"),
+        connected_at=datetime.now(timezone.utc),
+    )
+
+    history = await adapter.list_history(connection=connection, start_history_id=800)
+
+    assert history.added_message_ids == ["m2"]

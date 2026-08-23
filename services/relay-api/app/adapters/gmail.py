@@ -110,7 +110,11 @@ class GmailAdapter:
     ) -> HistoryPage:
         params: list[tuple[str, str]] = [
             ("startHistoryId", str(start_history_id)),
+            # A message can carry the watched label either at delivery (a Gmail
+            # filter applied it, producing messageAdded) or afterward (the user
+            # or a delayed rule applied it, producing labelAdded). Both count.
             ("historyTypes", "messageAdded"),
+            ("historyTypes", "labelAdded"),
             ("labelId", self._label_id(connection)),
         ]
         if page_token:
@@ -128,14 +132,15 @@ class GmailAdapter:
         for item in history:
             if not isinstance(item, dict):
                 continue
-            messages_added = item.get("messagesAdded", [])
-            if not isinstance(messages_added, list):
-                continue
-            for added in messages_added:
-                message = added.get("message") if isinstance(added, dict) else None
-                message_id = message.get("id") if isinstance(message, dict) else None
-                if isinstance(message_id, str) and message_id:
-                    added_message_ids.append(message_id)
+            for field in ("messagesAdded", "labelsAdded"):
+                entries = item.get(field, [])
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    message = entry.get("message") if isinstance(entry, dict) else None
+                    message_id = message.get("id") if isinstance(message, dict) else None
+                    if isinstance(message_id, str) and message_id:
+                        added_message_ids.append(message_id)
         next_page_token = payload.get("nextPageToken")
         if next_page_token is not None and not isinstance(next_page_token, str):
             raise GmailTerminalError("Gmail history response was malformed")
