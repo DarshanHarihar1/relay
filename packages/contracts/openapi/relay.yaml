@@ -278,6 +278,20 @@ components:
         approval_id: { type: string, minLength: 1 }
         state: { type: string, enum: [approved, declined] }
         action_ids: { type: array, items: { type: string, minLength: 1 } }
+    ActionDispatchRecord:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, action_id, status, correlation_id, attempts, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        user_id: { type: string, minLength: 1 }
+        action_id: { type: string, minLength: 1 }
+        status: { type: string, enum: [pending, claimed, completed] }
+        correlation_id: { type: string, minLength: 1 }
+        attempts: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
     Commitment:
       type: object
       additionalProperties: false

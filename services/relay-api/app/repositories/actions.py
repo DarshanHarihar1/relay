@@ -6,9 +6,18 @@ from typing import Protocol
 from google.cloud.firestore_v1 import AsyncClient
 from google.cloud.firestore_v1.async_transaction import async_transactional
 
-from app.contracts import ActionRecord, ActionState, Approval, ApprovalDecisionRequest, ApprovalDecisionResponse, DispatchClaim
+from app.contracts import (
+    ActionDispatchRecord,
+    ActionRecord,
+    ActionState,
+    Approval,
+    ApprovalDecisionRequest,
+    ApprovalDecisionResponse,
+    AuditLogEntry,
+    DispatchClaim,
+)
 from app.repositories.firestore import as_aware_datetimes, firestore_data, user_document, utc_now
-from app.services.action_state import derive_action_idempotency_key, validate_transition
+from app.services.action_state import derive_action_idempotency_key, valid_action_idempotency_keys, validate_transition
 
 
 class ApprovalVersionConflict(Exception):
@@ -21,6 +30,8 @@ class ActionRepository(Protocol):
     async def create(self, action: ActionRecord) -> ActionRecord: ...
 
     async def create_approval(self, approval: Approval) -> Approval: ...
+
+    async def get_dispatch(self, user_id: str, action_id: str) -> ActionDispatchRecord | None: ...
 
     async def decide_approval(
         self,
@@ -48,6 +59,12 @@ class FirestoreActionRepository:
     def _approval_document(self, user_id: str, approval_id: str):
         return self._client.document(user_document(user_id, "approvals", approval_id))
 
+    def _dispatch_document(self, user_id: str, action_id: str):
+        return self._client.document(user_document(user_id, "action_dispatches", action_id))
+
+    def _audit_document(self, user_id: str, audit_id: str):
+        return self._client.document(user_document(user_id, "audit_log", audit_id))
+
     async def get(self, user_id: str, action_id: str) -> ActionRecord | None:
         snapshot = await self._document(user_id, action_id).get()
         if not snapshot.exists:
@@ -61,6 +78,12 @@ class FirestoreActionRepository:
     async def create_approval(self, approval: Approval) -> Approval:
         await self._approval_document(approval.user_id, approval.id).create(firestore_data(approval))
         return approval
+
+    async def get_dispatch(self, user_id: str, action_id: str) -> ActionDispatchRecord | None:
+        snapshot = await self._dispatch_document(user_id, action_id).get()
+        if not snapshot.exists:
+            return None
+        return ActionDispatchRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
 
     async def decide_approval(
         self,
@@ -77,24 +100,56 @@ class FirestoreActionRepository:
                 raise LookupError
 
             approval = Approval.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            if approval.user_id != user_id:
+                raise LookupError
             if approval.version != request.expected_version or approval.state != "awaiting_approval":
                 raise ApprovalVersionConflict
 
-            actions: list[tuple[object, ActionRecord]] = []
+            if len(set(approval.action_ids)) != len(approval.action_ids):
+                raise ApprovalVersionConflict
+
+            action_rows: list[tuple[object, ActionRecord, object, object]] = []
             for action_id in approval.action_ids:
                 action_document = self._document(user_id, action_id)
                 action_snapshot = await action_document.get(transaction=transaction)
                 if not action_snapshot.exists:
                     raise ApprovalVersionConflict
                 action = ActionRecord.model_validate(as_aware_datetimes(action_snapshot.to_dict()))
+                if action.user_id != user_id:
+                    raise ApprovalVersionConflict
                 if action.state is not ActionState.AWAITING_APPROVAL:
                     raise ApprovalVersionConflict
-                actions.append((action_document, action))
+                if action.idempotency_key not in valid_action_idempotency_keys(action):
+                    raise ApprovalVersionConflict
+                dispatch_document = self._dispatch_document(user_id, action_id)
+                dispatch_snapshot = None
+                if request.decision == "approve":
+                    dispatch_snapshot = await dispatch_document.get(transaction=transaction)
+                action_rows.append((action_document, action, dispatch_document, dispatch_snapshot))
+
+            plan_identity = {(action.repair_plan_id, action.repair_plan_version) for _, action, _, _ in action_rows}
+            if len(plan_identity) != 1:
+                raise ApprovalVersionConflict
+
+            changed_at = utc_now()
+            if request.decision == "approve":
+                if approval.expires_at is not None and approval.expires_at <= changed_at:
+                    raise ApprovalVersionConflict
+                for _, action, _, dispatch_snapshot in action_rows:
+                    if action.type == "voice_call":
+                        action_expires_at = action.expires_at or action.authorization_snapshot.expires_at
+                        if action_expires_at <= changed_at:
+                            raise ApprovalVersionConflict
+                    if dispatch_snapshot is not None and dispatch_snapshot.exists:
+                        dispatch = ActionDispatchRecord.model_validate(
+                            as_aware_datetimes(dispatch_snapshot.to_dict())
+                        )
+                        if dispatch.status != "pending" or dispatch.action_id != action.id:
+                            raise ApprovalVersionConflict
 
             approved = request.decision == "approve"
             requested_state = ActionState.AUTHORIZED if approved else ActionState.NEEDS_USER
-            changed_at = utc_now()
-            for action_document, action in actions:
+            for action_document, action, dispatch_document, dispatch_snapshot in action_rows:
                 validate_transition(action.state, requested_state)
                 updated_action = action.model_copy(
                     update={
@@ -105,6 +160,27 @@ class FirestoreActionRepository:
                     }
                 )
                 transaction.update(action_document, firestore_data(updated_action))
+                audit = AuditLogEntry(
+                    id=f"approval-{approval.id}-{action.id}-{request.decision}",
+                    user_id=user_id,
+                    outcome=f"approval_{request.decision}",
+                    correlation_id=correlation_id,
+                    created_at=changed_at,
+                    updated_at=changed_at,
+                    payload={"action_state": requested_state.value},
+                )
+                transaction.create(self._audit_document(user_id, audit.id), firestore_data(audit))
+                if approved and (dispatch_snapshot is None or not dispatch_snapshot.exists):
+                    dispatch = ActionDispatchRecord(
+                        id=action.id,
+                        user_id=user_id,
+                        action_id=action.id,
+                        status="pending",
+                        correlation_id=correlation_id,
+                        created_at=changed_at,
+                        updated_at=changed_at,
+                    )
+                    transaction.create(dispatch_document, firestore_data(dispatch))
 
             updated_approval = approval.model_copy(
                 update={

@@ -12,6 +12,7 @@ from app.routes.actions import get_action_repository
 from app.services.action_state import (
     InvalidActionTransition,
     derive_action_idempotency_key,
+    valid_action_idempotency_keys,
     validate_transition,
 )
 
@@ -74,6 +75,27 @@ def test_action_idempotency_key_is_canonical_and_does_not_include_provider_data(
 
     assert first.startswith("relay-action-v1:")
     assert first == second
+
+
+def test_phase3_and_legacy_action_keys_are_both_accepted_during_migration():
+    action = InMemoryActionRepository().action.model_copy(
+        update={
+            "idempotency_key": derive_action_idempotency_key(
+                1,
+                "calendar_hold",
+                "calendar:primary",
+                InMemoryActionRepository().action.authorization_snapshot,
+            )
+        }
+    )
+
+    assert action.idempotency_key in valid_action_idempotency_keys(action)
+    assert derive_action_idempotency_key(
+        action.repair_plan_version,
+        action.type,
+        action.target_ref,
+        action.authorization_snapshot,
+    ) in valid_action_idempotency_keys(action)
 
 
 class InMemoryActionRepository:

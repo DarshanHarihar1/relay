@@ -166,6 +166,18 @@ class ApprovalDecisionResponse(ContractModel):
     action_ids: list[NonEmptyString]
 
 
+class ActionDispatchRecord(ContractModel):
+    id: NonEmptyString
+    user_id: NonEmptyString
+    action_id: NonEmptyString
+    status: Literal["pending", "claimed", "completed"]
+    correlation_id: NonEmptyString
+    attempts: int = Field(default=0, ge=0)
+    created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    version: int = Field(default=1, ge=1)
+
+
 class CallContract(ContractModel):
     action_id: NonEmptyString
     # Phase 3 stores this as a bounded descriptive string rather than one of

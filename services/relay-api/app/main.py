@@ -13,6 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .auth import CurrentUser, require_current_user
 from .contracts import (
+    ActionDispatchRecord,
     ActionRecord,
     ActionStatusResponse,
     Approval,
@@ -139,6 +140,7 @@ async def get_action(action_id: str, current_user: CurrentUser = Depends(require
 def _openapi_models() -> list[type]:
     return [
         ActionRecord,
+        ActionDispatchRecord,
         ActionStatusResponse,
         Approval,
         ApprovalDecisionRequest,

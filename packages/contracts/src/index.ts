@@ -1,4 +1,4 @@
-// Generated from openapi/relay.yaml (sha256:850f2855ef0fee433eea6311050e3fdeedfcc045593fe6c0ba8cf154624523c8). Do not edit manually.
+// Generated from openapi/relay.yaml (sha256:899ea3797dc983e6e8ba3b2e314b97eb78a7b049b1948b7498d1aaf59ba4e211). Do not edit manually.
 import { z } from "zod";
 
 export const actionStates = ["planned", "awaiting_approval", "authorized", "dispatched", "in_progress", "succeeded", "needs_user", "retryable_failure", "failed", "verified", "handoff_opened"] as const;
@@ -148,6 +148,18 @@ export const approvalDecisionResponseSchema = z.object({
   action_ids: z.array(nonEmptyString),
 }).strict();
 export type ApprovalDecisionResponse = z.infer<typeof approvalDecisionResponseSchema>;
+export const actionDispatchRecordSchema = z.object({
+  id: nonEmptyString,
+  user_id: nonEmptyString,
+  action_id: nonEmptyString,
+  status: z.enum(["pending", "claimed", "completed"]),
+  correlation_id: nonEmptyString,
+  attempts: z.number().int().min(0),
+  created_at: awareDateTime,
+  updated_at: awareDateTime,
+  version: z.number().int().min(1),
+}).strict();
+export type ActionDispatchRecord = z.infer<typeof actionDispatchRecordSchema>;
 
 export const commitmentSchema = z.object({ id: nonEmptyString, user_id: nonEmptyString, source_event_key: nonEmptyString, summary: nonEmptyString, starts_at: awareDateTime, ends_at: awareDateTime }).strict();
 export type Commitment = z.infer<typeof commitmentSchema>;

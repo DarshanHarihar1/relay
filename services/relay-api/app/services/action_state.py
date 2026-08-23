@@ -6,7 +6,7 @@ from hashlib import sha256
 import json
 from typing import Any
 
-from app.contracts import ActionState, JsonValue
+from app.contracts import ActionRecord, ActionState, JsonValue
 
 
 class InvalidActionTransition(ValueError):
@@ -89,3 +89,36 @@ def derive_action_idempotency_key(
         default=_json_default,
     )
     return f"relay-action-v1:{sha256(canonical.encode('utf-8')).hexdigest()}"
+
+
+def valid_action_idempotency_keys(action: ActionRecord) -> set[str]:
+    """Return both the Phase 3 and legacy stable-key forms for an action."""
+    from app.domain.impact import ActionKind, make_action_idempotency_key
+
+    action_kinds = {
+        "voice_call": (
+            ActionKind.CALL_CONTACT,
+            ActionKind.CALL_VENUE,
+            ActionKind.CALL_HOTEL,
+        ),
+        "calendar_hold": (ActionKind.CREATE_CALENDAR_HOLD,),
+        "uber_deep_link": (ActionKind.OPEN_UBER_HANDOFF,),
+    }[action.type]
+    keys = {
+        derive_action_idempotency_key(
+            action.repair_plan_version,
+            action.type,
+            action.target_ref,
+            action.authorization_snapshot,
+        )
+    }
+    keys.update(
+        make_action_idempotency_key(
+            action.repair_plan_version,
+            kind,
+            action.target_ref,
+            action.authorization_snapshot,
+        )
+        for kind in action_kinds
+    )
+    return keys

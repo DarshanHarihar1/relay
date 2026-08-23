@@ -7,6 +7,7 @@ from app.auth import CurrentUser, require_current_user
 from app.config import Settings
 from app.contracts import ApprovalDecisionRequest, ApprovalDecisionResponse, Problem
 from app.repositories.actions import ActionRepository, ApprovalVersionConflict, FirestoreActionRepository
+from app.services.approval_service import ApprovalService
 
 
 router = APIRouter()
@@ -37,13 +38,12 @@ async def decide_approval(
     current_user: CurrentUser = Depends(require_current_user),
     repository: ActionRepository = Depends(get_action_repository),
 ) -> ApprovalDecisionResponse:
-    if decision.approval_id != approval_id:
-        raise HTTPException(status_code=404)
     try:
-        return await repository.decide_approval(
-            current_user.uid,
-            decision,
-            getattr(request.state, "correlation_id", "unknown-correlation"),
+        return await ApprovalService(repository).decide(
+            approval_id,
+            user_id=current_user.uid,
+            request=decision,
+            correlation_id=getattr(request.state, "correlation_id", "unknown-correlation"),
         )
     except ApprovalVersionConflict as error:
         raise HTTPException(status_code=409) from error

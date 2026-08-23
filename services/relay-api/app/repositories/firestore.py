@@ -15,6 +15,7 @@ USER_COLLECTIONS = frozenset(
         "repair_plans",
         "approvals",
         "actions",
+        "action_dispatches",
         "provider_events",
         "source_events",
         "audit_log",
