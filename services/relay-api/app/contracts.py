@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Literal
 
@@ -97,6 +97,8 @@ class ActionRecord(ContractModel):
     correlation_id: NonEmptyString
     expires_at: AwareDatetime | None = None
     dispatched_at: AwareDatetime | None = None
+    created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     version: int = Field(default=1, ge=1)
 
     @model_validator(mode="after")
@@ -113,6 +115,8 @@ class Approval(ContractModel):
     state: Literal["pending", "approved", "declined"]
     version: int = Field(ge=1)
     correlation_id: NonEmptyString
+    created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ApprovalDecisionRequest(ContractModel):
@@ -134,6 +138,10 @@ class Commitment(ContractModel):
     summary: NonEmptyString
     starts_at: AwareDatetime
     ends_at: AwareDatetime
+    created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    version: int = Field(default=1, ge=1)
+    correlation_id: NonEmptyString | None = None
 
 
 class Edge(ContractModel):
@@ -149,6 +157,10 @@ class Disruption(ContractModel):
     source_event_key: NonEmptyString
     kind: NonEmptyString
     occurred_at: AwareDatetime
+    created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    version: int = Field(default=1, ge=1)
+    correlation_id: NonEmptyString | None = None
 
 
 class ProviderEvent(ContractModel):
@@ -158,6 +170,9 @@ class ProviderEvent(ContractModel):
     provider_event_key: NonEmptyString
     occurred_at: AwareDatetime
     correlation_id: NonEmptyString
+    created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    version: int = Field(default=1, ge=1)
 
 
 class SourceEventEnvelope(ContractModel):
@@ -166,6 +181,22 @@ class SourceEventEnvelope(ContractModel):
     occurred_at: AwareDatetime
     payload: dict[str, JsonValue]
     correlation_id: NonEmptyString
+
+
+class DispatchClaim(ContractModel):
+    claimed: bool
+    action: ActionRecord | None = None
+
+
+class AuditLogEntry(ContractModel):
+    id: NonEmptyString
+    user_id: NonEmptyString
+    outcome: NonEmptyString
+    correlation_id: NonEmptyString
+    created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    version: int = Field(default=1, ge=1)
+    source_event_key: NonEmptyString | None = None
 
 
 class Problem(ContractModel):
