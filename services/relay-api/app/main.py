@@ -24,7 +24,7 @@ from .contracts import (
     SourceEventEnvelope,
 )
 from .routes.actions import router as actions_router
-from .routes.google import router as google_router
+from .routes.google import pickup_router, router as google_router
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -40,6 +40,7 @@ app = FastAPI(title="Relay API", version="0.1.0")
 app.add_middleware(CorrelationIdMiddleware)
 app.include_router(actions_router)
 app.include_router(google_router)
+app.include_router(pickup_router)
 
 
 def create_app() -> FastAPI:
@@ -63,6 +64,13 @@ async def http_exception_handler(request: Request, exception: StarletteHTTPExcep
         404: ("not_found", "The requested resource was not found."),
         409: ("approval_version_conflict", "The approval was already decided. Refresh and review the current plan."),
     }
+    if exception.status_code == 409 and exception.detail == "CONTACTS_PERMISSION_REQUIRED":
+        return _problem_response(
+            request,
+            409,
+            "CONTACTS_PERMISSION_REQUIRED",
+            "Contacts permission is required to search your Google Contacts.",
+        )
     code, message = safe_errors.get(exception.status_code, ("request_failed", "The request could not be completed."))
     return _problem_response(request, exception.status_code, code, message)
 

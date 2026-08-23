@@ -188,6 +188,10 @@ class GoogleOAuthService:
         await self._store.delete_connection(user_id)
         await self._store.remove_unreferenced_selected_contacts(user_id)
 
+    async def get_connection(self, user_id: str) -> GoogleConnection | None:
+        """Return the requesting user's existing server-side connection only."""
+        return await self._store.get_connection(user_id)
+
     def decrypt_refresh_token(self, connection: GoogleConnection) -> str:
         return self._cipher.decrypt(connection.encrypted_refresh_token)
 
