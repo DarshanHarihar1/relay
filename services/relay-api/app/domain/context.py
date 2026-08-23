@@ -38,15 +38,28 @@ class RouteEstimate(ContractModel):
 
 
 class PlaceDetails(ContractModel):
+    """A public venue record. The phone number is a venue line, never a contact."""
+
     place_id: NonEmptyString
-    display_name: NonEmptyString
     address: NonEmptyString
+    # Optional because the Places field mask deliberately does not request a name.
+    display_name: NonEmptyString | None = None
     phone_number: str | None = None
 
 
 class CalendarWindow(ContractModel):
     window: TimeInterval
     busy: list[TimeInterval] = Field(default_factory=list)
+
+
+class CommitmentContext(ContractModel):
+    """Bounded, read-only context for one commitment. Absence is explicit."""
+
+    commitment_id: NonEmptyString
+    calendar: CalendarWindow | None = None
+    route_to_commitment: RouteEstimate | None = None
+    place: PlaceDetails | None = None
+    unavailable_reasons: list[NonEmptyString] = Field(default_factory=list)
 
 
 class PickerPhone(ContractModel):
