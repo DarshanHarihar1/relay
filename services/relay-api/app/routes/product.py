@@ -101,7 +101,9 @@ async def declare_pickup_contact(
         )
     except LookupError as error:
         raise HTTPException(status_code=404) from error
-    except (PickupVersionConflict, ContactsPermissionRequired, ValueError) as error:
+    except ContactsPermissionRequired as error:
+        raise HTTPException(status_code=409, detail="CONTACTS_PERMISSION_REQUIRED") from error
+    except (PickupVersionConflict, ValueError) as error:
         raise HTTPException(status_code=409, detail="COMMITMENT_VERSION_CONFLICT") from error
 
 

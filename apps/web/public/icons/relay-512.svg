@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Relay">
+  <rect width="512" height="512" rx="106" fill="#14213d"/>
+  <path d="M128 256c0-72 56-128 128-128h128v64H256c-36 0-64 28-64 64s28 64 64 64h128v64H256c-72 0-128-56-128-128Z" fill="#fca311"/>
+  <circle cx="256" cy="256" r="32" fill="#fff"/>
+</svg>
