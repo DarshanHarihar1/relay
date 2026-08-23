@@ -86,6 +86,9 @@ def test_fastapi_openapi_declares_only_relay_contract_routes():
         "/v1/me",
         "/v1/actions/{action_id}",
         "/v1/approvals/{approval_id}/decision",
+        "/v1/google/connect",
+        "/v1/google/callback",
+        "/v1/google/connection",
     }
     assert "SourceEventEnvelope" in document["components"]["schemas"]
     assert "ride_booked" not in document["components"]["schemas"]["ActionState"]["enum"]

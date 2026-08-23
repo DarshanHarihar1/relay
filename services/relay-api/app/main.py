@@ -24,6 +24,7 @@ from .contracts import (
     SourceEventEnvelope,
 )
 from .routes.actions import router as actions_router
+from .routes.google import router as google_router
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -38,6 +39,7 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 app = FastAPI(title="Relay API", version="0.1.0")
 app.add_middleware(CorrelationIdMiddleware)
 app.include_router(actions_router)
+app.include_router(google_router)
 
 
 def create_app() -> FastAPI:
