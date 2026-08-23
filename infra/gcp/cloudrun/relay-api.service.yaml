@@ -9,15 +9,37 @@ metadata:
     # Firebase ID token on user routes, and full Google OIDC verification
     # (issuer, exact audience, exact service account, email_verified) on
     # /v1/events/gmail and /internal/maintenance/daily.
-    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
     run.googleapis.com/invoker-iam-disabled: "true"
     relay.dev/pubsub-route: /v1/events/gmail
 spec:
   template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        run.googleapis.com/startup-cpu-boost: "true"
     spec:
       serviceAccountName: relay-api-sa@__PROJECT_ID__.iam.gserviceaccount.com
+      containerConcurrency: 80
+      timeoutSeconds: 300
       containers:
         - image: REGION-docker.pkg.dev/__PROJECT_ID__/relay/relay-api:latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 30
           env:
             # Non-secret. The push route accepts only an OIDC token minted for
             # this service account with the configured audience.
@@ -31,6 +53,8 @@ spec:
               value: __PROJECT_ID__
             - name: GOOGLE_CLOUD_LOCATION
               value: us-central1
+            - name: GOOGLE_CLOUD_REGION
+              value: asia-south1
             - name: RELAY_GEMINI_MODEL
               value: gemini-2.5-flash
             - name: GOOGLE_GMAIL_TOPIC
@@ -59,6 +83,11 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: GOOGLE_OAUTH_STATE_SIGNING_KEY
+                  key: latest
+            - name: VAPI_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: VAPI_WEBHOOK_SECRET
                   key: latest
             # MAPS_API_KEY returns when Phase 3 actually calls Routes and Places.
             # Mounting a secret no code reads would only add surface.

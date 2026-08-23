@@ -47,6 +47,26 @@ The deployment manifests read secrets only from Secret Manager. Use the secret
 names in `infra/gcp/secret-manifest.txt` with an approved injection process;
 do not add their values to this repository or `.env.local`.
 
+## Release-candidate checks
+
+The declarative build is in `infra/gcp/cloudbuild.yaml`. It runs contract,
+web, API, and deterministic E2E checks before publishing SHA-tagged API and
+worker images. The API is exposed only through the configured load balancer;
+the worker remains internal and Pub/Sub-authenticated.
+
+For a deployed, signed-in smoke check, provide a short-lived Firebase ID token
+on stdin and set the expected opaque seed marker:
+
+```bash
+export RELAY_API_ORIGIN="https://SERVICE_URL"
+export RELAY_EXPECTED_REPAIR_PLAN_ID="plan-demo"
+printf '%s' "$FIREBASE_ID_TOKEN" | scripts/smoke-demo.sh
+```
+
+The smoke script never approves an action or calls a provider. Record its
+correlation ID and the API/worker revision IDs in
+`docs/release-checklist.md`; do not record the token.
+
 ## Google Cloud configuration
 
 Relay uses Vertex AI through application-default credentials. Do not commit a `.env` file, API key, access token, service-account JSON file, or local Google Cloud configuration.

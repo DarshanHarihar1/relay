@@ -12,10 +12,32 @@ metadata:
     relay.dev/maintenance-route: /internal/maintenance/daily
 spec:
   template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        run.googleapis.com/startup-cpu-boost: "true"
     spec:
       serviceAccountName: relay-worker-sa@__PROJECT_ID__.iam.gserviceaccount.com
+      containerConcurrency: 40
+      timeoutSeconds: 300
       containers:
         - image: REGION-docker.pkg.dev/__PROJECT_ID__/relay/relay-worker:latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 30
           env:
             - name: VAPI_PRIVATE_KEY
               valueFrom:
@@ -51,3 +73,7 @@ spec:
               value: https://SERVICE_URL
             - name: VAPI_SERVER_URL
               value: https://SERVICE_URL/v1/webhooks/vapi
+            - name: GOOGLE_CLOUD_PROJECT
+              value: __PROJECT_ID__
+            - name: GOOGLE_CLOUD_REGION
+              value: asia-south1

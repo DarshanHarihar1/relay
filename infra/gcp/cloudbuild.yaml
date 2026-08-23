@@ -1,0 +1,107 @@
+substitutions:
+  _REGION: asia-south1
+  _RELAY_ENV: staging
+  _SERVICE_URL: https://SERVICE_URL
+  _GMAIL_LABEL: Label_REPLACE_ME
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - id: contracts-and-web
+    name: node:22
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        corepack enable
+        pnpm install --frozen-lockfile
+        pnpm check:contracts
+        pnpm --dir apps/web lint
+        pnpm --dir apps/web test --run
+        pnpm --dir apps/web build
+
+  - id: api-tests
+    name: ghcr.io/astral-sh/uv:0.6.14
+    dir: services/relay-api
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        uv sync --locked --all-groups
+        uv run ruff check .
+        uv run pytest -m "not emulator"
+
+  - id: build-api-image
+    name: gcr.io/cloud-builders/docker
+    waitFor: [contracts-and-web, api-tests]
+    args:
+      - build
+      - --tag
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/relay/relay-api:$SHORT_SHA'
+      - --file
+      - services/relay-api/Dockerfile
+      - services/relay-api
+
+  - id: build-worker-image
+    name: gcr.io/cloud-builders/docker
+    waitFor: [contracts-and-web, api-tests]
+    args:
+      - build
+      - --tag
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/relay/relay-worker:$SHORT_SHA'
+      - --file
+      - services/relay-api/Dockerfile
+      - services/relay-api
+
+  - id: push-images
+    name: gcr.io/cloud-builders/docker
+    waitFor: [build-api-image, build-worker-image]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        docker push '${_REGION}-docker.pkg.dev/$PROJECT_ID/relay/relay-api:$SHORT_SHA'
+        docker push '${_REGION}-docker.pkg.dev/$PROJECT_ID/relay/relay-worker:$SHORT_SHA'
+
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: [push-images]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        bash infra/gcp/render-service.sh --service relay-api --project "$PROJECT_ID" \
+          --region "${_REGION}" --service-url "${_SERVICE_URL}" --gmail-label "${_GMAIL_LABEL}" \
+          --tag "$SHORT_SHA" > /workspace/relay-api.yaml
+        gcloud run services replace /workspace/relay-api.yaml \
+          --project "$PROJECT_ID" --region "${_REGION}" --platform managed
+
+  - id: deploy-worker
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: [push-images]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        bash infra/gcp/render-service.sh --service relay-worker --project "$PROJECT_ID" \
+          --region "${_REGION}" --service-url "${_SERVICE_URL}" --tag "$SHORT_SHA" \
+          > /workspace/relay-worker.yaml
+        gcloud run services replace /workspace/relay-worker.yaml \
+          --project "$PROJECT_ID" --region "${_REGION}" --platform managed
+
+  - id: record-revisions
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: [deploy-api, deploy-worker]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        gcloud run services describe relay-api --project "$PROJECT_ID" --region "${_REGION}" \
+          --format='value(status.latestReadyRevisionName)'
+        gcloud run services describe relay-worker --project "$PROJECT_ID" --region "${_REGION}" \
+          --format='value(status.latestReadyRevisionName)'
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/relay/relay-api:$SHORT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/relay/relay-worker:$SHORT_SHA'
