@@ -12,7 +12,6 @@ class Settings:
     firebase_project_id: str | None
     google_oauth_client_id: str | None
     google_oauth_redirect_uri: str | None
-    gemini_api_key_secret_name: str | None
     google_oauth_client_secret_name: str | None
     maps_api_key_secret_name: str | None
     app_encryption_key_secret_name: str | None
@@ -24,7 +23,6 @@ class Settings:
             firebase_project_id=_configured("FIREBASE_PROJECT_ID"),
             google_oauth_client_id=_configured("GOOGLE_OAUTH_CLIENT_ID"),
             google_oauth_redirect_uri=_configured("GOOGLE_OAUTH_REDIRECT_URI"),
-            gemini_api_key_secret_name=_configured("GEMINI_API_KEY_SECRET_NAME"),
             google_oauth_client_secret_name=_configured("GOOGLE_OAUTH_CLIENT_SECRET_NAME"),
             maps_api_key_secret_name=_configured("MAPS_API_KEY_SECRET_NAME"),
             app_encryption_key_secret_name=_configured("APP_ENCRYPTION_KEY_SECRET_NAME"),
@@ -36,7 +34,6 @@ class Settings:
             "FIREBASE_PROJECT_ID": self.firebase_project_id,
             "GOOGLE_OAUTH_CLIENT_ID": self.google_oauth_client_id,
             "GOOGLE_OAUTH_REDIRECT_URI": self.google_oauth_redirect_uri,
-            "GEMINI_API_KEY_SECRET_NAME": self.gemini_api_key_secret_name,
             "GOOGLE_OAUTH_CLIENT_SECRET_NAME": self.google_oauth_client_secret_name,
             "MAPS_API_KEY_SECRET_NAME": self.maps_api_key_secret_name,
             "APP_ENCRYPTION_KEY_SECRET_NAME": self.app_encryption_key_secret_name,

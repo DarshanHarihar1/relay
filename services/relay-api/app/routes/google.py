@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
+from google.cloud.firestore_v1 import AsyncClient
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 
@@ -12,16 +14,15 @@ from app.adapters.google_people import GooglePeopleAdapter
 from app.auth import CurrentUser, require_current_user
 from app.domain.context import PickerContact
 from app.security import FernetFieldCipher
-from app.services.gmail_ingestion import (
-    GmailWatchService,
-    InMemoryGmailIngestionRepository,
-)
+from app.services.gmail_ingestion import GmailWatchService
 from app.services.contact_selection import (
     ContactChoice,
     ContactSelectionService,
     ContactsPermissionRequired,
-    InMemorySelectedContactStore,
 )
+from app.repositories.gmail_ingestion import FirestoreGmailIngestionRepository
+from app.repositories.google_connections import FirestoreGoogleStore
+from app.repositories.selected_contacts import FirestoreSelectedContactStore
 from app.settings import GoogleOAuthSettings
 
 
@@ -32,6 +33,16 @@ pickup_router = APIRouter(prefix="/v1/commitments", tags=["commitments"])
 
 
 @lru_cache(maxsize=1)
+def get_firestore_client() -> AsyncClient:
+    from os import getenv
+
+    project = getenv("GOOGLE_CLOUD_PROJECT")
+    if not project:
+        raise RuntimeError("Missing configuration: GOOGLE_CLOUD_PROJECT")
+    return AsyncClient(project=project)
+
+
+@lru_cache(maxsize=1)
 def get_google_oauth_service() -> GoogleOAuthService:
     settings = GoogleOAuthSettings.from_env()
     from os import getenv
@@ -39,7 +50,19 @@ def get_google_oauth_service() -> GoogleOAuthService:
     encryption_key = getenv("APP_ENCRYPTION_KEY")
     if not encryption_key:
         raise RuntimeError("Missing Google OAuth configuration: APP_ENCRYPTION_KEY")
-    return GoogleOAuthService(settings=settings, cipher=FernetFieldCipher(encryption_key))
+    return GoogleOAuthService(
+        settings=settings,
+        cipher=FernetFieldCipher(encryption_key),
+        store=FirestoreGoogleStore(get_firestore_client()),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_gmail_ingestion_repository() -> FirestoreGmailIngestionRepository:
+    client = get_firestore_client()
+    return FirestoreGmailIngestionRepository(
+        client, connections=FirestoreGoogleStore(client)
+    )
 
 
 @lru_cache(maxsize=1)
@@ -47,7 +70,7 @@ def get_gmail_watch_service() -> GmailWatchService:
     settings = GoogleOAuthSettings.from_env()
     oauth = get_google_oauth_service()
     return GmailWatchService(
-        repository=InMemoryGmailIngestionRepository(oauth),
+        repository=get_gmail_ingestion_repository(),
         gmail=GmailAdapter(
             client_id=settings.client_id,
             client_secret=settings.client_secret,
@@ -73,7 +96,7 @@ def get_contact_selection_service() -> ContactSelectionService:
             client_secret=settings.client_secret,
             refresh_token_reader=oauth.decrypt_refresh_token,
         ),
-        selections=InMemorySelectedContactStore(),
+        selections=FirestoreSelectedContactStore(get_firestore_client()),
         cipher=FernetFieldCipher(encryption_key),
     )
 

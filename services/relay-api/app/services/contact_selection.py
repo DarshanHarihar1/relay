@@ -55,21 +55,6 @@ class SelectedContactStore(Protocol):
     async def remove_selected_contact(self, *, user_id: str, commitment_id: str) -> None: ...
 
 
-class InMemorySelectedContactStore:
-    """Development store whose methods model the required atomic persistence boundary."""
-
-    def __init__(self) -> None:
-        self._selected: dict[tuple[str, str], SelectedContact] = {}
-
-    async def save_selected_contact(
-        self, *, user_id: str, commitment_id: str, selected: SelectedContact
-    ) -> None:
-        self._selected[(user_id, commitment_id)] = selected
-
-    async def remove_selected_contact(self, *, user_id: str, commitment_id: str) -> None:
-        self._selected.pop((user_id, commitment_id), None)
-
-
 class ContactSelectionService:
     _SEARCH_LIMIT = 10
     _SEARCH_WINDOW = timedelta(minutes=1)

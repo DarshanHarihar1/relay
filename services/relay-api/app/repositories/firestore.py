@@ -19,6 +19,9 @@ USER_COLLECTIONS = frozenset(
         "source_events",
         "audit_log",
         "outbox",
+        "google_connections",
+        "selected_contacts",
+        "gmail_claims",
     }
 )
 

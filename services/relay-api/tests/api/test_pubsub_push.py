@@ -45,11 +45,17 @@ class FakeConnections:
 
 
 class FakeQueue:
-    def __init__(self) -> None:
-        self.commands = []
+    """Records what the push route handed to ingestion, and how it failed."""
 
-    async def enqueue(self, command) -> None:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.commands = []
+        self.error = error
+
+    async def ingest_gmail_notification(self, command):
         self.commands.append(command)
+        if self.error is not None:
+            raise self.error
+        return None
 
 
 def _connection() -> GoogleConnection:
@@ -68,7 +74,7 @@ def test_push_rejects_wrong_oidc_audience() -> None:
 
     handler = GmailPubSubHandler(
         connections=FakeConnections([_connection()]),
-        queue=FakeQueue(),
+        ingestion=FakeQueue(),
         verifier=FakeVerifier(
             {
                 "iss": "https://accounts.google.com",
@@ -99,7 +105,7 @@ def test_push_queues_only_the_single_connection_for_mailbox() -> None:
     queue = FakeQueue()
     handler = GmailPubSubHandler(
         connections=FakeConnections([_connection()]),
-        queue=queue,
+        ingestion=queue,
         verifier=FakeVerifier(
             {
                 "iss": "accounts.google.com",
@@ -140,7 +146,7 @@ def _handler(connections, queue, claims, audit=None):
 
     return GmailPubSubHandler(
         connections=connections,
-        queue=queue,
+        ingestion=queue,
         verifier=FakeVerifier(claims),
         audience="https://relay.example/v1/events/gmail",
         service_account_email="relay-push@example.iam.gserviceaccount.com",
@@ -275,3 +281,37 @@ def test_daily_cleanup_runs_for_the_configured_service_identity() -> None:
 
     assert response.status_code == 204
     assert maintenance.runs == 1
+
+
+def test_a_retryable_failure_is_not_acknowledged_so_pubsub_redelivers() -> None:
+    from app.adapters.errors import RetryableProviderError
+
+    queue = FakeQueue(error=RetryableProviderError("Gmail temporarily unavailable"))
+
+    response = _post(_handler(FakeConnections([_connection()]), queue, VALID_CLAIMS))
+
+    # 503 leaves the message unacknowledged; the subscription's own backoff and
+    # dead-letter policy take over. Nothing sleeps inside the request.
+    assert response.status_code == 503
+    assert len(queue.commands) == 1
+
+
+def test_a_terminal_failure_is_acknowledged_and_audited() -> None:
+    from app.adapters.gmail import GmailTerminalError
+
+    queue = FakeQueue(error=GmailTerminalError("Gmail authorization failed: 403"))
+    audit = FakeAudit()
+
+    response = _post(_handler(FakeConnections([_connection()]), queue, VALID_CLAIMS, audit))
+
+    assert response.status_code == 204
+    assert audit.outcomes == ["GMAIL_INGESTION_TERMINAL"]
+
+
+def test_the_push_route_processes_before_acknowledging() -> None:
+    queue = FakeQueue()
+
+    response = _post(_handler(FakeConnections([_connection()]), queue, VALID_CLAIMS))
+
+    assert response.status_code == 204
+    assert queue.commands[0].user_id == "u1"

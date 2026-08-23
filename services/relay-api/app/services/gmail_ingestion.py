@@ -432,73 +432,6 @@ class GmailWatchService:
         return renewed
 
 
-class InMemoryGmailIngestionRepository:
-    """Development-only store. Deployments replace this with Firestore.
-
-    Connections are read through the existing server-side Google OAuth store so
-    there is exactly one connection record, and the Gmail cursor lives on that
-    record rather than in a second source of truth.
-    """
-
-    def __init__(self, connections: "_ConnectionStore") -> None:
-        self._connections = connections
-        self._claims: set[tuple[str, str]] = set()
-        self.audits: list[tuple[str, str]] = []
-
-    async def get_connection(self, user_id: str) -> GoogleConnection | None:
-        return await self._connections.get_connection(user_id)
-
-    async def put_connection(self, connection: GoogleConnection) -> None:
-        await self._connections.put_connection(connection)
-
-    async def list_connections_due_for_watch_renewal(
-        self, before: datetime
-    ) -> list[GoogleConnection]:
-        return await self._connections.list_connections_due_for_watch_renewal(before)
-
-    async def get_gmail_cursor(self, *, user_id: str, mailbox: str) -> int | None:
-        connection = await self._connections.get_connection(user_id)
-        if connection is None or connection.gmail_email_address != mailbox:
-            return None
-        return connection.gmail_history_id
-
-    async def update_gmail_cursor_if_newer(
-        self, *, user_id: str, mailbox: str, proposed_history_id: int
-    ) -> int:
-        connection = await self._connections.get_connection(user_id)
-        if connection is None or connection.gmail_email_address != mailbox:
-            raise GmailTerminalError("No active Gmail connection is available")
-        current = connection.gmail_history_id or 0
-        if proposed_history_id <= current:
-            return current
-        await self._connections.put_connection(
-            connection.model_copy(update={"gmail_history_id": proposed_history_id})
-        )
-        return proposed_history_id
-
-    async def claim_source_event(self, *, user_id: str, event: SourceEventEnvelope) -> bool:
-        key = (user_id, event.source_event_key)
-        if key in self._claims:
-            return False
-        self._claims.add(key)
-        return True
-
-    async def release_source_event_claim(self, *, user_id: str, source_event_key: str) -> None:
-        self._claims.discard((user_id, source_event_key))
-
-    async def append_ingestion_audit(
-        self,
-        *,
-        user_id: str,
-        outcome: str,
-        correlation_id: str,
-        source_event_key: str | None = None,
-        detail: dict[str, str] | None = None,
-    ) -> None:
-        del source_event_key, detail
-        self.audits.append((user_id, outcome))
-
-
 def _message_hash(message_id: str) -> str:
     """A stable, redacted reference. The raw message ID never reaches an audit."""
     return sha256(message_id.encode("utf-8")).hexdigest()
@@ -508,7 +441,6 @@ __all__ = [
     "CommitmentMatcher",
     "DisruptionExtractor",
     "GmailIngestionService",
-    "InMemoryGmailIngestionRepository",
     "GmailWatchService",
     "GmailRetryableError",
     "IngestGmailNotification",

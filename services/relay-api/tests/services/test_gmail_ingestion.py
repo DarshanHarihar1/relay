@@ -131,30 +131,6 @@ async def test_duplicate_notification_claims_source_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_uses_exactly_three_delays_then_dead_letters() -> None:
-    from app.services.gmail_ingestion import GmailRetryableError
-    from app.worker import GmailWorker, InMemoryDeadLetterQueue
-
-    class RetryService:
-        async def ingest_gmail_notification(self, command):
-            raise GmailRetryableError("Gmail temporarily unavailable")
-
-    delays: list[int] = []
-    dead_letters = InMemoryDeadLetterQueue()
-    worker = GmailWorker(
-        ingestion=RetryService(),
-        dead_letters=dead_letters,
-        sleep=lambda seconds: delays.append(seconds),
-    )
-    command = object()
-
-    await worker.process(command)
-
-    assert delays == [30, 120, 600]
-    assert dead_letters.items == [command]
-
-
-@pytest.mark.asyncio
 async def test_expired_history_triggers_exactly_one_bounded_resync() -> None:
     from app.adapters.gmail import GmailHistoryExpiredError
     from app.services.gmail_ingestion import GmailIngestionService, IngestGmailNotification
@@ -246,30 +222,6 @@ async def test_watch_renewal_audits_a_provider_failure_and_continues() -> None:
 
     assert renewed == []
     assert repository.audits == ["GMAIL_WATCH_RENEWAL_FAILED"]
-
-
-@pytest.mark.asyncio
-async def test_terminal_failure_dead_letters_without_any_retry_delay() -> None:
-    from app.adapters.gmail import GmailTerminalError
-    from app.worker import GmailWorker, InMemoryDeadLetterQueue
-
-    class TerminalService:
-        async def ingest_gmail_notification(self, command):
-            raise GmailTerminalError("Gmail authorization failed: 403")
-
-    delays: list[int] = []
-    dead_letters = InMemoryDeadLetterQueue()
-    worker = GmailWorker(
-        ingestion=TerminalService(),
-        dead_letters=dead_letters,
-        sleep=lambda seconds: delays.append(seconds),
-    )
-    command = object()
-
-    await worker.process(command)
-
-    assert delays == []
-    assert dead_letters.items == [command]
 
 
 @pytest.mark.asyncio

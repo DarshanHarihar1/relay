@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
+from app.adapters.errors import RetryableProviderError, TerminalProviderError
 from app.domain.ingestion import GmailNotification, GoogleConnection
 from app.services.gmail_ingestion import IngestGmailNotification
 
@@ -32,8 +33,8 @@ class GmailConnectionDirectory(Protocol):
     ) -> list[GoogleConnection]: ...
 
 
-class IngestionQueue(Protocol):
-    async def enqueue(self, command: IngestGmailNotification) -> None: ...
+class IngestionRunner(Protocol):
+    async def ingest_gmail_notification(self, command: IngestGmailNotification) -> Any: ...
 
 
 class IngestionAudit(Protocol):
@@ -119,14 +120,14 @@ class GmailPubSubHandler:
         self,
         *,
         connections: GmailConnectionDirectory,
-        queue: IngestionQueue,
+        ingestion: IngestionRunner,
         verifier: OidcVerifier,
         audience: str,
         service_account_email: str,
         audit: IngestionAudit | None = None,
     ) -> None:
         self._connections = connections
-        self._queue = queue
+        self._ingestion = ingestion
         self._verifier = verifier
         self._audience = audience
         self._service_account_email = service_account_email
@@ -152,13 +153,23 @@ class GmailPubSubHandler:
             await self._append_audit(outcome, correlation_id)
             return
 
-        await self._queue.enqueue(
-            IngestGmailNotification(
-                user_id=matches[0].user_id,
-                notification=notification,
-                correlation_id=correlation_id,
-            )
+        command = IngestGmailNotification(
+            user_id=matches[0].user_id,
+            notification=notification,
+            correlation_id=correlation_id,
         )
+        try:
+            await self._ingestion.ingest_gmail_notification(command)
+        except RetryableProviderError as error:
+            # Do not acknowledge. Pub/Sub redelivers under the subscription's own
+            # retry policy (10s-600s backoff, 5 attempts, then the dead-letter
+            # topic), which survives an instance being scaled away mid-flight.
+            logger.warning("gmail_ingestion_retry", extra={"correlation_id": correlation_id})
+            raise HTTPException(status_code=503) from error
+        except TerminalProviderError:
+            # Acknowledged on purpose: redelivering cannot make this succeed.
+            logger.warning("gmail_ingestion_terminal", extra={"correlation_id": correlation_id})
+            await self._append_audit("GMAIL_INGESTION_TERMINAL", correlation_id)
 
     async def _verify_push_identity(self, authorization: str | None) -> None:
         await verify_google_service_identity(
@@ -212,28 +223,26 @@ def _published_at(value: Any) -> datetime:
 def get_gmail_pubsub_handler() -> GmailPubSubHandler:
     from os import getenv
 
-    from google.cloud.firestore_v1 import AsyncClient
-
     from app.adapters.gemini import VertexGeminiExtractor, default_access_token_provider
     from app.adapters.gmail import GmailAdapter
-    from app.routes.google import get_google_oauth_service
-    from app.services.gmail_ingestion import (
-        GmailIngestionService,
-        InMemoryGmailIngestionRepository,
+    from app.routes.google import (
+        get_firestore_client,
+        get_gmail_ingestion_repository,
+        get_google_oauth_service,
     )
+    from app.services.gmail_ingestion import GmailIngestionService
     from app.adapters.pubsub_publisher import PubSubCommandPublisher
     from app.repositories.disruptions import FirestoreDisruptionRepository, FirestoreOutbox
     from app.security import FernetFieldCipher
     from app.services.commitment_matcher import ConservativeCommitmentMatcher
     from app.settings import GoogleOAuthSettings
-    from app.worker import GmailWorker, InMemoryDeadLetterQueue, LocalIngestionQueue
 
     settings = GoogleOAuthSettings.from_env()
     service_account_email = getenv("GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT")
     if not service_account_email:
         raise RuntimeError("Missing configuration: GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT")
     oauth = get_google_oauth_service()
-    repository = InMemoryGmailIngestionRepository(oauth)
+    repository = get_gmail_ingestion_repository()
     project = getenv("GOOGLE_CLOUD_PROJECT")
     if not project:
         raise RuntimeError("Missing configuration: GOOGLE_CLOUD_PROJECT")
@@ -241,7 +250,7 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
     if not encryption_key:
         raise RuntimeError("Missing configuration: APP_ENCRYPTION_KEY")
     model = getenv("RELAY_GEMINI_MODEL", "gemini-2.5-flash")
-    firestore = AsyncClient(project=project)
+    firestore = get_firestore_client()
     disruptions = FirestoreDisruptionRepository(firestore)
     access_token_provider = default_access_token_provider()
     outbox = FirestoreOutbox(
@@ -274,10 +283,9 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
         ),
         phase3=outbox,
     )
-    worker = GmailWorker(ingestion=ingestion, dead_letters=InMemoryDeadLetterQueue())
     return GmailPubSubHandler(
         connections=oauth,
-        queue=LocalIngestionQueue(worker),
+        ingestion=ingestion,
         verifier=GoogleOidcVerifier(),
         audience=settings.pubsub_push_audience,
         service_account_email=service_account_email,
@@ -288,13 +296,11 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
 def get_maintenance_handler() -> MaintenanceHandler:
     from os import getenv
 
-    from google.cloud.firestore_v1 import AsyncClient
-
     from app.adapters.gemini import default_access_token_provider
     from app.adapters.pubsub_publisher import PubSubCommandPublisher
     from app.repositories.disruptions import FirestoreOutbox
     from app.repositories.retention import FirestoreRetentionStore
-    from app.routes.google import get_gmail_watch_service
+    from app.routes.google import get_firestore_client, get_gmail_watch_service
     from app.services.retention import RetentionService
     from app.settings import GoogleOAuthSettings
     from app.worker import DailyMaintenance
@@ -306,7 +312,7 @@ def get_maintenance_handler() -> MaintenanceHandler:
     project = getenv("GOOGLE_CLOUD_PROJECT")
     if not project:
         raise RuntimeError("Missing configuration: GOOGLE_CLOUD_PROJECT")
-    firestore = AsyncClient(project=project)
+    firestore = get_firestore_client()
     return MaintenanceHandler(
         maintenance=DailyMaintenance(
             retention=RetentionService(store=FirestoreRetentionStore(firestore)),

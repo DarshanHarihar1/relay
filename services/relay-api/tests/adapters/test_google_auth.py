@@ -31,11 +31,13 @@ async def test_default_connection_requests_only_gmail_and_calendar(oauth_setting
         CONTACTS_SCOPE,
         GMAIL_SCOPE,
         GoogleOAuthService,
+        InMemoryGoogleOAuthStore,
     )
 
     service = GoogleOAuthService(
         settings=oauth_settings,
         cipher=FernetFieldCipher(FernetFieldCipher.generate_key()),
+        store=InMemoryGoogleOAuthStore(),
     )
 
     authorization_url = await service.begin_google_connection("user-1", enable_contacts_picker=False)
@@ -47,11 +49,16 @@ async def test_default_connection_requests_only_gmail_and_calendar(oauth_setting
 
 @pytest.mark.asyncio
 async def test_completion_rejects_contacts_scope_not_selected_in_signed_state(oauth_settings):
-    from app.adapters.google_auth import CONTACTS_SCOPE, GoogleOAuthService
+    from app.adapters.google_auth import (
+        CONTACTS_SCOPE,
+        GoogleOAuthService,
+        InMemoryGoogleOAuthStore,
+    )
 
     service = GoogleOAuthService(
         settings=oauth_settings,
         cipher=FernetFieldCipher(FernetFieldCipher.generate_key()),
+        store=InMemoryGoogleOAuthStore(),
     )
     authorization_url = await service.begin_google_connection("user-1", enable_contacts_picker=False)
     state = parse_qs(urlparse(authorization_url).query)["state"][0]
@@ -69,11 +76,12 @@ async def test_completion_rejects_contacts_scope_not_selected_in_signed_state(oa
 
 @pytest.mark.asyncio
 async def test_completion_encrypts_refresh_token_before_storing(oauth_settings):
-    from app.adapters.google_auth import GoogleOAuthService
+    from app.adapters.google_auth import GoogleOAuthService, InMemoryGoogleOAuthStore
 
     service = GoogleOAuthService(
         settings=oauth_settings,
         cipher=FernetFieldCipher(FernetFieldCipher.generate_key()),
+        store=InMemoryGoogleOAuthStore(),
     )
     authorization_url = await service.begin_google_connection("user-1", enable_contacts_picker=True)
     state = parse_qs(urlparse(authorization_url).query)["state"][0]

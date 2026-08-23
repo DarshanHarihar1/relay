@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from app.adapters.google_auth import CALENDAR_READONLY_SCOPE, CONTACTS_SCOPE, GMAIL_SCOPE
 from app.main import app
+from app.security import FernetFieldCipher
+from app.settings import GoogleOAuthSettings
 
 
 def _auth_headers(monkeypatch) -> dict[str, str]:
@@ -26,11 +28,30 @@ def _oauth_environment(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENCRYPTION_KEY", "XfPCnrnILPHCrhTRsNw4eBrlwpVVn6XofltfwSkNRk8=")
 
 
+def _use_in_memory_oauth_service():
+    """Scope selection is the subject here, so persistence stays out of the way."""
+    from app.adapters.google_auth import GoogleOAuthService, InMemoryGoogleOAuthStore
+    from app.routes.google import get_google_oauth_service
+
+    service = GoogleOAuthService(
+        settings=GoogleOAuthSettings.from_env(),
+        cipher=FernetFieldCipher("XfPCnrnILPHCrhTRsNw4eBrlwpVVn6XofltfwSkNRk8="),
+        store=InMemoryGoogleOAuthStore(),
+    )
+    app.dependency_overrides[get_google_oauth_service] = lambda: service
+
+
 def test_default_connect_omits_contacts_scope(monkeypatch):
     _oauth_environment(monkeypatch)
     auth_headers = _auth_headers(monkeypatch)
+    _use_in_memory_oauth_service()
 
-    response = TestClient(app).get("/v1/google/connect", headers=auth_headers, follow_redirects=False)
+    try:
+        response = TestClient(app).get(
+            "/v1/google/connect", headers=auth_headers, follow_redirects=False
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 307
     assert GMAIL_SCOPE in response.headers["location"]
@@ -41,12 +62,16 @@ def test_default_connect_omits_contacts_scope(monkeypatch):
 def test_picker_opt_in_discloses_and_requests_contacts_scope(monkeypatch):
     _oauth_environment(monkeypatch)
     auth_headers = _auth_headers(monkeypatch)
+    _use_in_memory_oauth_service()
 
-    response = TestClient(app).get(
-        "/v1/google/connect?enable_contacts_picker=true",
-        headers=auth_headers,
-        follow_redirects=False,
-    )
+    try:
+        response = TestClient(app).get(
+            "/v1/google/connect?enable_contacts_picker=true",
+            headers=auth_headers,
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 307
     assert CONTACTS_SCOPE in response.headers["location"]

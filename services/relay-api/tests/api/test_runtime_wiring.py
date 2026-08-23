@@ -64,7 +64,11 @@ def test_the_gmail_push_handler_graph_builds_from_environment(configured) -> Non
     handler = get_gmail_pubsub_handler()
 
     assert isinstance(handler, GmailPubSubHandler)
-    ingestion = handler._queue._worker._ingestion
+    ingestion = handler._ingestion
+    # Every persistent store in the production graph must be Firestore-backed.
+    from app.repositories.gmail_ingestion import FirestoreGmailIngestionRepository
+
+    assert isinstance(ingestion._repository, FirestoreGmailIngestionRepository)
     assert isinstance(ingestion._extractor, VertexGeminiExtractor)
     assert isinstance(ingestion._matcher, ConservativeCommitmentMatcher)
     # The Phase 3 handoff must be a durable outbox, not absent and not in-memory.

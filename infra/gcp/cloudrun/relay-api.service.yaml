@@ -20,6 +20,23 @@ spec:
             # Non-secret. The OAuth client secret is mounted from Secret Manager below.
             - name: GOOGLE_OAUTH_CLIENT_ID
               value: 248144890838-je2nd969tue4keml65272ssn6tq3bhes.apps.googleusercontent.com
+            - name: GOOGLE_CLOUD_PROJECT
+              value: PROJECT_ID
+            - name: GOOGLE_CLOUD_LOCATION
+              value: us-central1
+            - name: RELAY_GEMINI_MODEL
+              value: gemini-2.5-flash
+            - name: GOOGLE_GMAIL_TOPIC
+              value: projects/PROJECT_ID/topics/gmail-events
+            - name: RELAY_WORK_TOPIC
+              value: relay-work
+            # Set at deploy time from the service URL and the user's Gmail label.
+            - name: GOOGLE_OAUTH_REDIRECT_URI
+              value: https://SERVICE_URL/v1/google/callback
+            - name: GOOGLE_PUBSUB_PUSH_AUDIENCE
+              value: https://SERVICE_URL/v1/events/gmail
+            - name: GOOGLE_GMAIL_LABEL_ID
+              value: Label_REPLACE_ME
             - name: GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT
               value: relay-api-sa@PROJECT_ID.iam.gserviceaccount.com
             - name: GOOGLE_OAUTH_CLIENT_SECRET

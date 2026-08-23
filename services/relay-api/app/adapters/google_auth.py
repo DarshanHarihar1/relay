@@ -57,7 +57,7 @@ class GoogleOAuthStore(Protocol):
 
 
 class InMemoryGoogleOAuthStore:
-    """Development-only server-side store. Deployments replace this with Firestore."""
+    """Test double. Deployments use FirestoreGoogleStore, which is now required."""
 
     def __init__(self) -> None:
         self._nonces: dict[str, datetime] = {}
@@ -116,11 +116,11 @@ class GoogleOAuthService:
         *,
         settings: GoogleOAuthSettings,
         cipher: FieldCipher,
-        store: GoogleOAuthStore | None = None,
+        store: GoogleOAuthStore,
     ) -> None:
         self._settings = settings
         self._cipher = cipher
-        self._store = store or InMemoryGoogleOAuthStore()
+        self._store = store
 
     @property
     def default_scopes(self) -> frozenset[str]:
