@@ -8,6 +8,7 @@ metadata:
     run.googleapis.com/ingress: internal
     run.googleapis.com/invoker-iam-disabled: "false"
     relay.dev/pubsub-route: /internal/pubsub/relay-work
+    relay.dev/maintenance-route: /internal/maintenance/daily
 spec:
   template:
     spec:

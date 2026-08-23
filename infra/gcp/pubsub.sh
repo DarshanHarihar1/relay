@@ -126,4 +126,38 @@ else
   printf 'Deploy relay-worker, then rerun this script to configure its private push routes.\n' >&2
 fi
 
+# The daily cleanup and Gmail watch renewal run from Cloud Scheduler with an OIDC
+# token for the same service account the push route already accepts.
+configure_daily_maintenance() {
+  local service_url
+  service_url=$(gcloud run services describe relay-api \
+    --project="$project_id" --region="$region" --format='value(status.url)' 2>/dev/null || true)
+  [[ -n "$service_url" ]] || return 1
+
+  gcloud scheduler jobs describe relay-daily-maintenance \
+    --project="$project_id" --location="$region" >/dev/null 2>&1 \
+    && gcloud scheduler jobs update http relay-daily-maintenance \
+      --project="$project_id" \
+      --location="$region" \
+      --schedule='0 3 * * *' \
+      --uri="${service_url}/internal/maintenance/daily" \
+      --http-method=POST \
+      --oidc-service-account-email="$API_SERVICE_ACCOUNT" \
+      --oidc-token-audience="${service_url}/v1/events/gmail" \
+      --quiet \
+    || gcloud scheduler jobs create http relay-daily-maintenance \
+      --project="$project_id" \
+      --location="$region" \
+      --schedule='0 3 * * *' \
+      --uri="${service_url}/internal/maintenance/daily" \
+      --http-method=POST \
+      --oidc-service-account-email="$API_SERVICE_ACCOUNT" \
+      --oidc-token-audience="${service_url}/v1/events/gmail" \
+      --quiet
+}
+
+if ! configure_daily_maintenance; then
+  printf 'Deploy relay-api, then rerun this script to schedule daily retention cleanup.\n' >&2
+fi
+
 printf 'Pub/Sub topics and processing subscriptions are configured for %s.\n' "$project_id"

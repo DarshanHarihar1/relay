@@ -57,6 +57,56 @@ class GoogleOidcVerifier:
         return id_token.verify_oauth2_token(token, google_requests.Request(), audience)
 
 
+async def verify_google_service_identity(
+    *,
+    authorization: str | None,
+    verifier: OidcVerifier,
+    audience: str,
+    service_account_email: str,
+) -> None:
+    """Accept a request only from the configured Google service identity."""
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401)
+    try:
+        claims = await verifier.verify(token, audience)
+    except Exception as error:  # noqa: BLE001 - any verification failure is a rejection
+        raise HTTPException(status_code=401) from error
+    if (
+        claims.get("iss") not in _GOOGLE_ISSUERS
+        or claims.get("aud") != audience
+        or claims.get("email") != service_account_email
+        or claims.get("email_verified") is not True
+    ):
+        raise HTTPException(status_code=401)
+
+
+class MaintenanceHandler:
+    """The authenticated trigger for the daily cleanup and watch renewal."""
+
+    def __init__(
+        self,
+        *,
+        maintenance: Any,
+        verifier: OidcVerifier,
+        audience: str,
+        service_account_email: str,
+    ) -> None:
+        self._maintenance = maintenance
+        self._verifier = verifier
+        self._audience = audience
+        self._service_account_email = service_account_email
+
+    async def run(self, *, authorization: str | None) -> None:
+        await verify_google_service_identity(
+            authorization=authorization,
+            verifier=self._verifier,
+            audience=self._audience,
+            service_account_email=self._service_account_email,
+        )
+        await self._maintenance.run_daily_maintenance()
+
+
 class GmailPubSubHandler:
     """The authenticated Pub/Sub push boundary for Gmail notifications.
 
@@ -111,20 +161,12 @@ class GmailPubSubHandler:
         )
 
     async def _verify_push_identity(self, authorization: str | None) -> None:
-        scheme, _, token = (authorization or "").partition(" ")
-        if scheme.lower() != "bearer" or not token:
-            raise HTTPException(status_code=401)
-        try:
-            claims = await self._verifier.verify(token, self._audience)
-        except Exception as error:  # noqa: BLE001 - any verification failure is a rejection
-            raise HTTPException(status_code=401) from error
-        if (
-            claims.get("iss") not in _GOOGLE_ISSUERS
-            or claims.get("aud") != self._audience
-            or claims.get("email") != self._service_account_email
-            or claims.get("email_verified") is not True
-        ):
-            raise HTTPException(status_code=401)
+        await verify_google_service_identity(
+            authorization=authorization,
+            verifier=self._verifier,
+            audience=self._audience,
+            service_account_email=self._service_account_email,
+        )
 
     @staticmethod
     def _decode(body: dict[str, Any]) -> tuple[GmailNotification, str | None]:
@@ -230,6 +272,45 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
     )
 
 
+@lru_cache(maxsize=1)
+def get_maintenance_handler() -> MaintenanceHandler:
+    from os import getenv
+
+    from google.cloud.firestore_v1 import AsyncClient
+
+    from app.repositories.retention import FirestoreRetentionStore
+    from app.routes.google import get_gmail_watch_service
+    from app.services.retention import RetentionService
+    from app.settings import GoogleOAuthSettings
+    from app.worker import DailyMaintenance
+
+    settings = GoogleOAuthSettings.from_env()
+    service_account_email = getenv("GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT")
+    if not service_account_email:
+        raise RuntimeError("Missing configuration: GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT")
+    project = getenv("GOOGLE_CLOUD_PROJECT")
+    if not project:
+        raise RuntimeError("Missing configuration: GOOGLE_CLOUD_PROJECT")
+    return MaintenanceHandler(
+        maintenance=DailyMaintenance(
+            retention=RetentionService(store=FirestoreRetentionStore(AsyncClient(project=project))),
+            watches=get_gmail_watch_service(),
+        ),
+        verifier=GoogleOidcVerifier(),
+        audience=settings.pubsub_push_audience,
+        service_account_email=service_account_email,
+    )
+
+
+@router.post("/internal/maintenance/daily", status_code=204, response_class=Response)
+async def run_daily_maintenance(
+    authorization: str | None = Header(default=None),
+    handler: MaintenanceHandler = Depends(get_maintenance_handler),
+) -> Response:
+    await handler.run(authorization=authorization)
+    return Response(status_code=204)
+
+
 @router.post("/v1/events/gmail", status_code=204, response_class=Response)
 async def receive_gmail_push(
     request: Request,
@@ -245,4 +326,12 @@ async def receive_gmail_push(
     return Response(status_code=204)
 
 
-__all__ = ["GmailPubSubHandler", "GoogleOidcVerifier", "get_gmail_pubsub_handler", "router"]
+__all__ = [
+    "GmailPubSubHandler",
+    "GoogleOidcVerifier",
+    "MaintenanceHandler",
+    "get_gmail_pubsub_handler",
+    "get_maintenance_handler",
+    "router",
+    "verify_google_service_identity",
+]

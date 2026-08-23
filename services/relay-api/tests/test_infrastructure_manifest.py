@@ -32,3 +32,13 @@ def test_gmail_push_is_authenticated_and_bounded():
     worker_spec = Path("../../infra/gcp/cloudrun/relay-worker.service.yaml").read_text()
     assert "run.googleapis.com/ingress: internal" in worker_spec
     assert 'run.googleapis.com/invoker-iam-disabled: "false"' in worker_spec
+
+
+def test_daily_retention_cleanup_is_scheduled_with_an_oidc_identity():
+    pubsub = Path("../../infra/gcp/pubsub.sh").read_text()
+    assert "/internal/maintenance/daily" in pubsub
+    assert "--oidc-service-account-email" in pubsub
+    assert "--oidc-token-audience" in pubsub
+
+    worker_spec = Path("../../infra/gcp/cloudrun/relay-worker.service.yaml").read_text()
+    assert "relay.dev/maintenance-route: /internal/maintenance/daily" in worker_spec

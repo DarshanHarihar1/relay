@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -73,6 +74,33 @@ class GmailWorker:
             await result
 
 
+class DailyMaintenance:
+    """The one scheduled job Phase 2 owns: purge expired data, renew watches.
+
+    Both steps are idempotent, so a repeated or overlapping run is harmless.
+    """
+
+    def __init__(self, *, retention: Any, watches: Any = None) -> None:
+        self._retention = retention
+        self._watches = watches
+
+    async def run_daily_maintenance(self) -> dict[str, int]:
+        summary = await self._retention.purge_expired_ingestion_data(now=_utc_now())
+        renewed: list[str] = []
+        if self._watches is not None:
+            renewed = await self._watches.renew_expiring_watches()
+        # Counts only. Nothing identifying reaches this log line.
+        logger.info(
+            "daily_maintenance",
+            extra={"purged": summary.total(), "watches_renewed": len(renewed)},
+        )
+        return {"purged": summary.total(), "watches_renewed": len(renewed)}
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class LocalIngestionQueue:
     """Development-only queue that runs the worker in this process.
 
@@ -90,4 +118,4 @@ class LocalIngestionQueue:
         task.add_done_callback(self._tasks.discard)
 
 
-__all__ = ["DeadLetterQueue", "LocalIngestionQueue", "GmailWorker", "InMemoryDeadLetterQueue", "RETRY_DELAYS_SECONDS"]
+__all__ = ["DailyMaintenance", "DeadLetterQueue", "LocalIngestionQueue", "GmailWorker", "InMemoryDeadLetterQueue", "RETRY_DELAYS_SECONDS"]

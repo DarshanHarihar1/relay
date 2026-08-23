@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -28,6 +29,7 @@ from .contracts import (
 from .routes.actions import router as actions_router
 from .routes.google import pickup_router, router as google_router
 from .routes.pubsub import router as pubsub_router
+from .services.retention import RedactingLogFilter
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -38,6 +40,10 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         response.headers["X-Correlation-ID"] = correlation_id
         return response
 
+
+# Every Relay logger is filtered, so a sensitive value cannot reach a log sink
+# even if a future call site passes one by mistake.
+logging.getLogger("relay").addFilter(RedactingLogFilter())
 
 app = FastAPI(title="Relay API", version="0.1.0")
 app.add_middleware(CorrelationIdMiddleware)

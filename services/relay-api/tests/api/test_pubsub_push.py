@@ -223,3 +223,55 @@ def test_push_rejects_a_malformed_envelope_without_retrying() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
+
+
+class FakeMaintenance:
+    def __init__(self) -> None:
+        self.runs = 0
+
+    async def run_daily_maintenance(self):
+        self.runs += 1
+        return {"purged": 0, "watches_renewed": 0}
+
+
+def _maintenance_handler(claims, maintenance):
+    from app.routes.pubsub import MaintenanceHandler
+
+    return MaintenanceHandler(
+        maintenance=maintenance,
+        verifier=FakeVerifier(claims),
+        audience="https://relay.example/v1/events/gmail",
+        service_account_email="relay-push@example.iam.gserviceaccount.com",
+    )
+
+
+def _post_maintenance(handler):
+    from app.routes.pubsub import get_maintenance_handler
+
+    app.dependency_overrides[get_maintenance_handler] = lambda: handler
+    try:
+        return TestClient(app).post(
+            "/internal/maintenance/daily", headers={"Authorization": "Bearer token"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_daily_cleanup_requires_the_configured_service_identity() -> None:
+    maintenance = FakeMaintenance()
+
+    response = _post_maintenance(
+        _maintenance_handler({**VALID_CLAIMS, "email": "someone@else.test"}, maintenance)
+    )
+
+    assert response.status_code == 401
+    assert maintenance.runs == 0
+
+
+def test_daily_cleanup_runs_for_the_configured_service_identity() -> None:
+    maintenance = FakeMaintenance()
+
+    response = _post_maintenance(_maintenance_handler(VALID_CLAIMS, maintenance))
+
+    assert response.status_code == 204
+    assert maintenance.runs == 1

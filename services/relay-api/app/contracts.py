@@ -227,6 +227,8 @@ class AuditLogEntry(ContractModel):
     updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     version: int = Field(default=1, ge=1)
     source_event_key: NonEmptyString | None = None
+    # Counts, hashes, and reasons only. Never message content.
+    payload: dict[str, NonEmptyString] = Field(default_factory=dict)
 
 
 class Problem(ContractModel):

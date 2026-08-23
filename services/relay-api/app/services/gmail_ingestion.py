@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from collections.abc import Callable
@@ -17,6 +19,7 @@ from app.adapters.gmail import (
 )
 from app.contracts import ContractModel, SourceEventEnvelope
 from app.domain.ingestion import DisruptionCandidate, GmailMessage, MatchResult
+from app.services.commitment_matcher import disruption_id
 from app.domain.ingestion import (
     GmailNotification,
     GoogleConnection,
@@ -24,6 +27,7 @@ from app.domain.ingestion import (
     WatchRegistration,
 )
 from app.ports.google import GmailPort
+from app.services.retention import AssessDisruption, Phase3WorkPort
 
 
 class IngestGmailNotification(ContractModel):
@@ -64,6 +68,9 @@ class IngestionSummary(ContractModel):
     duplicate_count: int = Field(default=0, ge=0)
     stale: bool = False
     resynced: bool = False
+
+
+logger = logging.getLogger("relay.ingestion")
 
 
 class _ConnectionStore(Protocol):
@@ -123,12 +130,14 @@ class GmailIngestionService:
         gmail: GmailPort,
         extractor: DisruptionExtractor | None = None,
         matcher: CommitmentMatcher | None = None,
+        phase3: Phase3WorkPort | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._gmail = gmail
         self._extractor = extractor
         self._matcher = matcher
+        self._phase3 = phase3
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     async def ingest_gmail_notification(self, command: IngestGmailNotification) -> IngestionSummary:
@@ -223,6 +232,11 @@ class GmailIngestionService:
             mailbox=mailbox,
             proposed_history_id=highest_history_id,
         )
+        # Counts only. These become the Phase 2 log-based metrics.
+        logger.info(
+            "gmail_ingestion_summary",
+            extra={"correlation_id": command.correlation_id, **summary.model_dump()},
+        )
         return summary
 
     async def _extract(
@@ -299,8 +313,21 @@ class GmailIngestionService:
             source_event_key=source_event_key,
             correlation_id=command.correlation_id,
         )
-        if created:
-            summary.disruption_count += 1
+        if not created:
+            # The disruption already existed, so its assessment was already enqueued.
+            return
+        summary.disruption_count += 1
+        if self._phase3 is None:
+            return
+        # Exactly one assessment per durable disruption, and only after it exists.
+        await self._phase3.enqueue_assessment(
+            AssessDisruption(
+                disruption_id=disruption_id(source_event_key, result.commitment_id),
+                commitment_id=result.commitment_id,
+                correlation_id=command.correlation_id,
+                source_event_key=source_event_key,
+            )
+        )
 
     async def _connection_for_command(self, command: IngestGmailNotification) -> GoogleConnection:
         connection = await self._repository.get_connection(command.user_id)
