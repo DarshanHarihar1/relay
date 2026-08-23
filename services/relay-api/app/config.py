@@ -23,6 +23,7 @@ class Settings:
     relay_public_base_url: str | None = None
     vapi_server_url: str | None = None
     app_encryption_key: str | None = None
+    uber_client_id: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -42,6 +43,7 @@ class Settings:
             relay_public_base_url=_configured("RELAY_PUBLIC_BASE_URL"),
             vapi_server_url=_configured("VAPI_SERVER_URL"),
             app_encryption_key=_configured("APP_ENCRYPTION_KEY"),
+            uber_client_id=_configured("UBER_CLIENT_ID"),
         )
 
     def require_cloud_configuration(self) -> "Settings":

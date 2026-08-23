@@ -5,7 +5,8 @@ from google.cloud.firestore_v1 import AsyncClient
 
 from app.auth import CurrentUser, require_current_user
 from app.config import Settings
-from app.contracts import ApprovalDecisionRequest, ApprovalDecisionResponse, Problem
+from app.contracts import ApprovalDecisionRequest, ApprovalDecisionResponse, HandoffResponse, Problem
+from app.providers.uber import UberDeepLinkBuilder
 from app.repositories.actions import ActionRepository, ApprovalVersionConflict, FirestoreActionRepository
 from app.services.approval_service import ApprovalService
 
@@ -49,3 +50,32 @@ async def decide_approval(
         raise HTTPException(status_code=409) from error
     except LookupError as error:
         raise HTTPException(status_code=404) from error
+
+
+@router.post(
+    "/v1/actions/{action_id}/open-handoff",
+    response_model=HandoffResponse,
+    responses={401: {"model": Problem}, 404: {"model": Problem}, 409: {"model": Problem}},
+)
+async def open_uber_handoff(
+    action_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(require_current_user),
+    repository: ActionRepository = Depends(get_action_repository),
+) -> HandoffResponse:
+    action = await repository.get(current_user.uid, action_id)
+    if action is None:
+        raise HTTPException(status_code=404)
+    try:
+        client_id = Settings.from_env().uber_client_id or "relay-client"
+        url = UberDeepLinkBuilder(client_id=client_id).build(action)
+        return await repository.open_handoff(
+            current_user.uid,
+            action_id,
+            url,
+            getattr(request.state, "correlation_id", "unknown-correlation"),
+        )
+    except ApprovalVersionConflict as error:
+        raise HTTPException(status_code=409) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409) from error

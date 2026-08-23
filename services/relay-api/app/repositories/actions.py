@@ -16,6 +16,7 @@ from app.contracts import (
     ApprovalDecisionResponse,
     AuditLogEntry,
     DispatchClaim,
+    HandoffResponse,
     JsonValue,
 )
 from app.repositories.firestore import as_aware_datetimes, firestore_data, user_document, utc_now
@@ -48,6 +49,14 @@ class ActionRepository(Protocol):
         request: ApprovalDecisionRequest,
         correlation_id: str,
     ) -> ApprovalDecisionResponse: ...
+
+    async def open_handoff(
+        self,
+        user_id: str,
+        action_id: str,
+        url: str,
+        correlation_id: str,
+    ) -> HandoffResponse: ...
 
     async def claim_dispatch(
         self,
@@ -283,6 +292,52 @@ class FirestoreActionRepository:
             )
 
         return await decide(self._client.transaction())
+
+    async def open_handoff(
+        self,
+        user_id: str,
+        action_id: str,
+        url: str,
+        correlation_id: str,
+    ) -> HandoffResponse:
+        document = self._document(user_id, action_id)
+
+        @async_transactional
+        async def open_action(transaction):
+            snapshot = await document.get(transaction=transaction)
+            if not snapshot.exists:
+                raise LookupError
+            action = ActionRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            if action.type != "uber_deep_link":
+                raise ApprovalVersionConflict
+            if action.state is ActionState.HANDOFF_OPENED:
+                stored_url = (
+                    action.verification_evidence.get("handoff_url")
+                    if action.verification_evidence
+                    else None
+                )
+                return HandoffResponse(
+                    action_id=action.id,
+                    state="handoff_opened",
+                    url=stored_url if isinstance(stored_url, str) else url,
+                )
+            if action.state is not ActionState.AUTHORIZED:
+                raise ApprovalVersionConflict
+            validate_transition(action.state, ActionState.HANDOFF_OPENED, action_type=action.type)
+            now = utc_now()
+            updated = action.model_copy(
+                update={
+                    "state": ActionState.HANDOFF_OPENED,
+                    "verification_evidence": {"handoff_url": url},
+                    "updated_at": now,
+                    "correlation_id": correlation_id,
+                    "version": action.version + 1,
+                }
+            )
+            transaction.update(document, firestore_data(updated))
+            return HandoffResponse(action_id=action.id, state="handoff_opened", url=url)
+
+        return await open_action(self._client.transaction())
 
     async def claim_dispatch(
         self,

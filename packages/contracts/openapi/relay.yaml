@@ -62,6 +62,24 @@ paths:
               schema: { $ref: "#/components/schemas/ActionRecord" }
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+  /v1/actions/{action_id}/open-handoff:
+    post:
+      operationId: openUberHandoff
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Uber handoff
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HandoffResponse" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /v1/approvals/{approval_id}/decision:
     post:
       operationId: decideApproval

@@ -2,6 +2,12 @@ import { getFirebaseAuth } from "./firebase";
 
 const relayApiUrl = process.env.NEXT_PUBLIC_RELAY_API_URL ?? "";
 
+export type HandoffResponse = {
+  action_id: string;
+  state: "handoff_opened";
+  url: string;
+};
+
 function correlationId(): string {
   return globalThis.crypto.randomUUID();
 }
@@ -27,5 +33,14 @@ export async function relayFetch<T>(path: string, init: RequestInit = {}): Promi
   if (!response.ok) {
     throw new Error(`Relay API request failed with status ${response.status}`);
   }
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
+}
+
+export async function openUberHandoff(actionId: string): Promise<HandoffResponse> {
+  return relayFetch<HandoffResponse>("/v1/actions/" + encodeURIComponent(actionId) + "/open-handoff", {
+    method: "POST",
+  });
 }
