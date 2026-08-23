@@ -173,6 +173,7 @@ class ActionDispatchRecord(ContractModel):
     status: Literal["pending", "claimed", "completed"]
     correlation_id: NonEmptyString
     attempts: int = Field(default=0, ge=0)
+    provider_ref: NonEmptyString | None = None
     created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     version: int = Field(default=1, ge=1)

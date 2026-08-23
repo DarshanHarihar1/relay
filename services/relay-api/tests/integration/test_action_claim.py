@@ -52,6 +52,10 @@ async def test_two_simultaneous_claims_return_one_dispatched_action(actions):
     assert {first.action.state, second.action.state} == {ActionState.DISPATCHED}
     assert first.claimed is not second.claimed
     assert (await actions.get("user-a", "act-1")).version == 2
+    dispatch = await actions.get_dispatch("user-a", "act-1")
+    assert dispatch is not None
+    assert dispatch.status == "claimed"
+    assert {first.reconciliation_required, second.reconciliation_required} == {False, True}
 
 
 @pytest.mark.emulator

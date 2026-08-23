@@ -5,6 +5,7 @@ from typing import Protocol
 
 from google.cloud.firestore_v1 import AsyncClient
 from google.cloud.firestore_v1.async_transaction import async_transactional
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.contracts import (
     ActionDispatchRecord,
@@ -15,9 +16,10 @@ from app.contracts import (
     ApprovalDecisionResponse,
     AuditLogEntry,
     DispatchClaim,
+    JsonValue,
 )
 from app.repositories.firestore import as_aware_datetimes, firestore_data, user_document, utc_now
-from app.services.action_state import derive_action_idempotency_key, valid_action_idempotency_keys, validate_transition
+from app.services.action_state import valid_action_idempotency_keys, validate_transition
 
 
 class ApprovalVersionConflict(Exception):
@@ -47,6 +49,29 @@ class ActionRepository(Protocol):
         now: datetime,
         correlation_id: str,
     ) -> DispatchClaim: ...
+
+    async def mark_provider_request(
+        self,
+        user_id: str,
+        action_id: str,
+        provider_ref: str,
+        evidence: dict[str, object],
+        correlation_id: str,
+    ) -> ActionRecord: ...
+
+    async def complete_dispatch_record(self, user_id: str, action_id: str, correlation_id: str) -> None: ...
+
+    async def list_pending_dispatches(self, user_id: str, limit: int) -> list[str]: ...
+
+    async def record_dispatch_failure(
+        self,
+        user_id: str,
+        action_id: str,
+        state: ActionState,
+        retry_count: int,
+        reason: str,
+        correlation_id: str,
+    ) -> ActionRecord: ...
 
 
 class FirestoreActionRepository:
@@ -207,6 +232,7 @@ class FirestoreActionRepository:
         correlation_id: str,
     ) -> DispatchClaim:
         document = self._document(user_id, action_id)
+        dispatch_document = self._dispatch_document(user_id, action_id)
 
         @async_transactional
         async def claim(transaction):
@@ -215,10 +241,25 @@ class FirestoreActionRepository:
                 return DispatchClaim(claimed=False)
 
             action = ActionRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            dispatch_snapshot = await dispatch_document.get(transaction=transaction)
+            dispatch = (
+                ActionDispatchRecord.model_validate(as_aware_datetimes(dispatch_snapshot.to_dict()))
+                if dispatch_snapshot.exists
+                else None
+            )
             if action.state is not ActionState.AUTHORIZED:
-                return DispatchClaim(claimed=False, action=action)
+                return DispatchClaim(
+                    claimed=False,
+                    action=action,
+                    reconciliation_required=(
+                        action.state is ActionState.DISPATCHED and action.provider_ref is None
+                    ),
+                )
 
-            if action.expires_at is not None and action.expires_at <= now:
+            expiry = action.expires_at
+            if action.type == "voice_call":
+                expiry = expiry or action.authorization_snapshot.expires_at
+            if expiry is not None and expiry <= now:
                 validate_transition(action.state, ActionState.NEEDS_USER)
                 expired_action = action.model_copy(
                     update={
@@ -232,14 +273,10 @@ class FirestoreActionRepository:
                 transaction.update(document, firestore_data(expired_action))
                 return DispatchClaim(claimed=False, action=expired_action)
 
-            stored_key = derive_action_idempotency_key(
-                action.repair_plan_version,
-                action.type,
-                action.target_ref,
-                action.authorization_snapshot,
-            )
-            if action.idempotency_key != stored_key:
+            if action.idempotency_key not in valid_action_idempotency_keys(action):
                 return DispatchClaim(claimed=False, action=action)
+            if dispatch is not None and dispatch.status != "pending":
+                return DispatchClaim(claimed=False, action=action, reconciliation_required=True)
 
             validate_transition(action.state, ActionState.DISPATCHED)
             claimed_action = action.model_copy(
@@ -252,6 +289,170 @@ class FirestoreActionRepository:
                 }
             )
             transaction.update(document, firestore_data(claimed_action))
+            claimed_dispatch = ActionDispatchRecord(
+                id=action.id,
+                user_id=user_id,
+                action_id=action.id,
+                status="claimed",
+                correlation_id=correlation_id,
+                attempts=(dispatch.attempts + 1) if dispatch is not None else 1,
+                provider_ref=dispatch.provider_ref if dispatch is not None else None,
+                created_at=dispatch.created_at if dispatch is not None else now,
+                updated_at=now,
+                version=(dispatch.version + 1) if dispatch is not None else 1,
+            )
+            if dispatch is None:
+                transaction.create(dispatch_document, firestore_data(claimed_dispatch))
+            else:
+                transaction.update(dispatch_document, firestore_data(claimed_dispatch))
             return DispatchClaim(claimed=True, action=claimed_action)
 
         return await claim(self._client.transaction())
+
+    async def mark_provider_request(
+        self,
+        user_id: str,
+        action_id: str,
+        provider_ref: str,
+        evidence: dict[str, JsonValue],
+        correlation_id: str,
+    ) -> ActionRecord:
+        document = self._document(user_id, action_id)
+        dispatch_document = self._dispatch_document(user_id, action_id)
+
+        @async_transactional
+        async def mark(transaction):
+            snapshot = await document.get(transaction=transaction)
+            if not snapshot.exists:
+                raise LookupError
+            action = ActionRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            dispatch_snapshot = await dispatch_document.get(transaction=transaction)
+            dispatch = (
+                ActionDispatchRecord.model_validate(as_aware_datetimes(dispatch_snapshot.to_dict()))
+                if dispatch_snapshot.exists
+                else None
+            )
+            if action.provider_ref is not None:
+                return action
+            validate_transition(action.state, ActionState.IN_PROGRESS)
+            now = utc_now()
+            updated_action = action.model_copy(
+                update={
+                    "state": ActionState.IN_PROGRESS,
+                    "provider_ref": provider_ref,
+                    "verification_evidence": evidence,
+                    "updated_at": now,
+                    "correlation_id": correlation_id,
+                    "version": action.version + 1,
+                }
+            )
+            transaction.update(document, firestore_data(updated_action))
+            if dispatch is not None:
+                transaction.update(
+                    dispatch_document,
+                    firestore_data(
+                        dispatch.model_copy(
+                            update={
+                                "provider_ref": provider_ref,
+                                "updated_at": now,
+                                "correlation_id": correlation_id,
+                                "version": dispatch.version + 1,
+                            }
+                        )
+                    ),
+                )
+            return updated_action
+
+        return await mark(self._client.transaction())
+
+    async def complete_dispatch_record(self, user_id: str, action_id: str, correlation_id: str) -> None:
+        dispatch_document = self._dispatch_document(user_id, action_id)
+
+        @async_transactional
+        async def complete(transaction):
+            snapshot = await dispatch_document.get(transaction=transaction)
+            if not snapshot.exists:
+                return
+            dispatch = ActionDispatchRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            if dispatch.status == "completed":
+                return
+            now = utc_now()
+            transaction.update(
+                dispatch_document,
+                firestore_data(
+                    dispatch.model_copy(
+                        update={
+                            "status": "completed",
+                            "updated_at": now,
+                            "correlation_id": correlation_id,
+                            "version": dispatch.version + 1,
+                        }
+                    )
+                ),
+            )
+
+        await complete(self._client.transaction())
+
+    async def record_dispatch_failure(
+        self,
+        user_id: str,
+        action_id: str,
+        state: ActionState,
+        retry_count: int,
+        reason: str,
+        correlation_id: str,
+    ) -> ActionRecord:
+        document = self._document(user_id, action_id)
+        dispatch_document = self._dispatch_document(user_id, action_id)
+
+        @async_transactional
+        async def record(transaction):
+            snapshot = await document.get(transaction=transaction)
+            if not snapshot.exists:
+                raise LookupError
+            action = ActionRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            validate_transition(action.state, state)
+            dispatch_snapshot = await dispatch_document.get(transaction=transaction)
+            dispatch = (
+                ActionDispatchRecord.model_validate(as_aware_datetimes(dispatch_snapshot.to_dict()))
+                if dispatch_snapshot.exists
+                else None
+            )
+            now = utc_now()
+            updated_action = action.model_copy(
+                update={
+                    "state": state,
+                    "retry_count": retry_count,
+                    "verification_evidence": {"reason": reason},
+                    "updated_at": now,
+                    "correlation_id": correlation_id,
+                    "version": action.version + 1,
+                }
+            )
+            transaction.update(document, firestore_data(updated_action))
+            if dispatch is not None:
+                transaction.update(
+                    dispatch_document,
+                    firestore_data(
+                        dispatch.model_copy(
+                            update={
+                                "status": "pending" if state is ActionState.RETRYABLE_FAILURE else "completed",
+                                "updated_at": now,
+                                "correlation_id": correlation_id,
+                                "version": dispatch.version + 1,
+                            }
+                        )
+                    ),
+                )
+            return updated_action
+
+        return await record(self._client.transaction())
+
+    async def list_pending_dispatches(self, user_id: str, limit: int) -> list[str]:
+        query = self._client.collection(f"users/{user_id}/action_dispatches").where(
+            filter=FieldFilter("status", "==", "pending")
+        ).limit(limit)
+        return [
+            snapshot.id
+            async for snapshot in query.stream()
+        ]

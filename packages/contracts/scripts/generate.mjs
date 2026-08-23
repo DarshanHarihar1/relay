@@ -184,6 +184,7 @@ export const actionDispatchRecordSchema = z.object({
   status: z.enum(["pending", "claimed", "completed"]),
   correlation_id: nonEmptyString,
   attempts: z.number().int().min(0),
+  provider_ref: nonEmptyString.nullable().optional(),
   created_at: awareDateTime,
   updated_at: awareDateTime,
   version: z.number().int().min(1),

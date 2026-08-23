@@ -88,6 +88,12 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+  /internal/pubsub/relay-action-work:
+    post:
+      operationId: receiveActionWork
+      responses:
+        "204":
+          description: Action work accepted
 components:
   securitySchemes:
     bearerAuth:
@@ -289,6 +295,7 @@ components:
         status: { type: string, enum: [pending, claimed, completed] }
         correlation_id: { type: string, minLength: 1 }
         attempts: { type: integer, minimum: 0 }
+        provider_ref: { type: [string, "null"] }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         version: { type: integer, minimum: 1 }

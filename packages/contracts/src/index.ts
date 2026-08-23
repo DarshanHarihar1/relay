@@ -1,4 +1,4 @@
-// Generated from openapi/relay.yaml (sha256:899ea3797dc983e6e8ba3b2e314b97eb78a7b049b1948b7498d1aaf59ba4e211). Do not edit manually.
+// Generated from openapi/relay.yaml (sha256:0d24da30c4eeda9f8f84299cc913e8c22239eaf5ed32526db7f2bd4c928d0b75). Do not edit manually.
 import { z } from "zod";
 
 export const actionStates = ["planned", "awaiting_approval", "authorized", "dispatched", "in_progress", "succeeded", "needs_user", "retryable_failure", "failed", "verified", "handoff_opened"] as const;
@@ -155,6 +155,7 @@ export const actionDispatchRecordSchema = z.object({
   status: z.enum(["pending", "claimed", "completed"]),
   correlation_id: nonEmptyString,
   attempts: z.number().int().min(0),
+  provider_ref: nonEmptyString.nullable().optional(),
   created_at: awareDateTime,
   updated_at: awareDateTime,
   version: z.number().int().min(1),
