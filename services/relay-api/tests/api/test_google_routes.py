@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from app.adapters.google_auth import CALENDAR_READONLY_SCOPE, CONTACTS_SCOPE, GMAIL_SCOPE
 from app.main import app
+from app.security import FernetFieldCipher
+from app.settings import GoogleOAuthSettings
 
 
 class _AsyncTokenResponse:
@@ -15,8 +17,6 @@ class _AsyncTokenResponse:
             "refresh_token": "refresh-token",
             "scope": self._service.default_scopes_string,
         }
-from app.security import FernetFieldCipher
-from app.settings import GoogleOAuthSettings
 
 
 def _auth_headers(monkeypatch) -> dict[str, str]:
