@@ -221,7 +221,8 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
         GmailIngestionService,
         InMemoryGmailIngestionRepository,
     )
-    from app.repositories.disruptions import FirestoreDisruptionRepository
+    from app.adapters.pubsub_publisher import PubSubCommandPublisher
+    from app.repositories.disruptions import FirestoreDisruptionRepository, FirestoreOutbox
     from app.security import FernetFieldCipher
     from app.services.commitment_matcher import ConservativeCommitmentMatcher
     from app.settings import GoogleOAuthSettings
@@ -240,7 +241,17 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
     if not encryption_key:
         raise RuntimeError("Missing configuration: APP_ENCRYPTION_KEY")
     model = getenv("RELAY_GEMINI_MODEL", "gemini-2.5-flash")
-    disruptions = FirestoreDisruptionRepository(AsyncClient(project=project))
+    firestore = AsyncClient(project=project)
+    disruptions = FirestoreDisruptionRepository(firestore)
+    access_token_provider = default_access_token_provider()
+    outbox = FirestoreOutbox(
+        firestore,
+        publisher=PubSubCommandPublisher(
+            project=project,
+            topic=getenv("RELAY_WORK_TOPIC", "relay-work"),
+            access_token_provider=access_token_provider,
+        ),
+    )
     ingestion = GmailIngestionService(
         repository=repository,
         gmail=GmailAdapter(
@@ -253,7 +264,7 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
             project=project,
             location=getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             model=model,
-            access_token_provider=default_access_token_provider(),
+            access_token_provider=access_token_provider,
         ),
         matcher=ConservativeCommitmentMatcher(
             commitments=disruptions,
@@ -261,6 +272,7 @@ def get_gmail_pubsub_handler() -> GmailPubSubHandler:
             cipher=FernetFieldCipher(encryption_key),
             model_version=model,
         ),
+        phase3=outbox,
     )
     worker = GmailWorker(ingestion=ingestion, dead_letters=InMemoryDeadLetterQueue())
     return GmailPubSubHandler(
@@ -278,6 +290,9 @@ def get_maintenance_handler() -> MaintenanceHandler:
 
     from google.cloud.firestore_v1 import AsyncClient
 
+    from app.adapters.gemini import default_access_token_provider
+    from app.adapters.pubsub_publisher import PubSubCommandPublisher
+    from app.repositories.disruptions import FirestoreOutbox
     from app.repositories.retention import FirestoreRetentionStore
     from app.routes.google import get_gmail_watch_service
     from app.services.retention import RetentionService
@@ -291,10 +306,19 @@ def get_maintenance_handler() -> MaintenanceHandler:
     project = getenv("GOOGLE_CLOUD_PROJECT")
     if not project:
         raise RuntimeError("Missing configuration: GOOGLE_CLOUD_PROJECT")
+    firestore = AsyncClient(project=project)
     return MaintenanceHandler(
         maintenance=DailyMaintenance(
-            retention=RetentionService(store=FirestoreRetentionStore(AsyncClient(project=project))),
+            retention=RetentionService(store=FirestoreRetentionStore(firestore)),
             watches=get_gmail_watch_service(),
+            outbox=FirestoreOutbox(
+                firestore,
+                publisher=PubSubCommandPublisher(
+                    project=project,
+                    topic=getenv("RELAY_WORK_TOPIC", "relay-work"),
+                    access_token_provider=default_access_token_provider(),
+                ),
+            ),
         ),
         verifier=GoogleOidcVerifier(),
         audience=settings.pubsub_push_audience,

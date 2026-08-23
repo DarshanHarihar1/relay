@@ -144,3 +144,123 @@ async def test_retention_writes_a_counts_only_audit_entry(firestore_client) -> N
 
     assert stored["payload"] == {"category": "raw_evidence", "deleted": "1"}
     assert "evidence_excerpt" not in stored
+
+
+@pytest.mark.emulator
+async def test_the_disruption_and_its_assessment_command_are_written_atomically(
+    firestore_client,
+) -> None:
+    from app.services.retention import AssessDisruption
+
+    repository = FirestoreDisruptionRepository(firestore_client)
+    user_id = f"u-{uuid4().hex}"
+    disruption = _disruption(user_id, uuid4().hex)
+    assessment = AssessDisruption(
+        disruption_id=disruption.id,
+        commitment_id="flight_AB12",
+        correlation_id="corr-1",
+        source_event_key="gmail:m1:900",
+    )
+
+    created = await repository.create_disruption_if_absent(disruption, assessment=assessment)
+
+    outbox = await firestore_client.document(
+        user_document(user_id, "outbox", disruption.id)
+    ).get()
+
+    assert created is True
+    assert outbox.exists, "the assessment command must land in the same transaction"
+    assert outbox.to_dict()["command"]["disruption_id"] == disruption.id
+    assert outbox.to_dict()["published_at"] is None
+
+
+@pytest.mark.emulator
+async def test_a_redelivered_source_event_writes_no_second_outbox_entry(firestore_client) -> None:
+    from app.services.retention import AssessDisruption
+
+    repository = FirestoreDisruptionRepository(firestore_client)
+    user_id = f"u-{uuid4().hex}"
+    disruption = _disruption(user_id, uuid4().hex)
+    assessment = AssessDisruption(
+        disruption_id=disruption.id,
+        commitment_id="flight_AB12",
+        correlation_id="corr-1",
+        source_event_key="gmail:m1:900",
+    )
+
+    first = await repository.create_disruption_if_absent(disruption, assessment=assessment)
+    second = await repository.create_disruption_if_absent(disruption, assessment=assessment)
+
+    entries = [
+        snapshot
+        async for snapshot in firestore_client.collection(f"users/{user_id}/outbox").stream()
+    ]
+
+    assert (first, second) == (True, False)
+    assert len(entries) == 1
+
+
+@pytest.mark.emulator
+async def test_draining_the_outbox_publishes_each_command_exactly_once(firestore_client) -> None:
+    from app.repositories.disruptions import FirestoreOutbox
+    from app.services.retention import AssessDisruption
+
+    repository = FirestoreDisruptionRepository(firestore_client)
+    user_id = f"u-{uuid4().hex}"
+    disruption = _disruption(user_id, uuid4().hex)
+    assessment = AssessDisruption(
+        disruption_id=disruption.id,
+        commitment_id="flight_AB12",
+        correlation_id="corr-1",
+        source_event_key="gmail:m1:900",
+    )
+    await repository.create_disruption_if_absent(disruption, assessment=assessment)
+
+    published: list = []
+
+    class Publisher:
+        async def publish(self, command) -> None:
+            published.append(command)
+
+    outbox = FirestoreOutbox(firestore_client, publisher=Publisher())
+    first = await outbox.drain()
+    second = await outbox.drain()
+
+    assert first == 1
+    assert second == 0, "a drained command must never be published twice"
+    assert published[0].disruption_id == disruption.id
+
+
+@pytest.mark.emulator
+async def test_a_failed_publish_leaves_the_command_for_the_next_drain(firestore_client) -> None:
+    from app.repositories.disruptions import FirestoreOutbox
+    from app.services.retention import AssessDisruption
+
+    repository = FirestoreDisruptionRepository(firestore_client)
+    user_id = f"u-{uuid4().hex}"
+    disruption = _disruption(user_id, uuid4().hex)
+    await repository.create_disruption_if_absent(
+        disruption,
+        assessment=AssessDisruption(
+            disruption_id=disruption.id,
+            commitment_id="flight_AB12",
+            correlation_id="corr-1",
+            source_event_key="gmail:m1:900",
+        ),
+    )
+
+    class FailingPublisher:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        async def publish(self, command) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("Pub/Sub unavailable")
+
+    publisher = FailingPublisher()
+    outbox = FirestoreOutbox(firestore_client, publisher=publisher)
+
+    assert await outbox.drain() == 0
+    assert await outbox.drain() == 1
+    assert publisher.attempts == 2

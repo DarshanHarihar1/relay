@@ -8,6 +8,7 @@ from typing import Protocol
 from app.contracts import Commitment, Disruption, GmailEvidenceRef, Provenance
 from app.domain.ingestion import DisruptionCandidate, GmailMessage, MatchResult
 from app.security import FieldCipher
+from app.services.retention import AssessDisruption
 
 
 LOOKBACK = timedelta(hours=24)
@@ -40,7 +41,9 @@ class CommitmentStore(Protocol):
 
 
 class DisruptionStore(Protocol):
-    async def create_disruption_if_absent(self, disruption: Disruption) -> bool: ...
+    async def create_disruption_if_absent(
+        self, disruption: Disruption, *, assessment: AssessDisruption | None = None
+    ) -> bool: ...
 
 
 def normalize_tokens(value: str | None) -> frozenset[str]:
@@ -162,8 +165,9 @@ class ConservativeCommitmentMatcher:
         if match.status != "matched" or match.commitment_id is None:
             return False
         booking_reference = normalize_booking_reference(candidate.booking_reference)
+        identifier = disruption_id(source_event_key, match.commitment_id)
         disruption = Disruption(
-            id=disruption_id(source_event_key, match.commitment_id),
+            id=identifier,
             user_id=user_id,
             source_event_key=source_event_key,
             kind=candidate.change_type,
@@ -184,7 +188,16 @@ class ConservativeCommitmentMatcher:
             match_reasons=list(match.reasons),
             provenance=Provenance(source="gmail", confidence=candidate.confidence),
         )
-        return await self._disruptions.create_disruption_if_absent(disruption)
+        # The Phase 3 command is written in the same transaction as the disruption.
+        return await self._disruptions.create_disruption_if_absent(
+            disruption,
+            assessment=AssessDisruption(
+                disruption_id=identifier,
+                commitment_id=match.commitment_id,
+                correlation_id=correlation_id,
+                source_event_key=source_event_key,
+            ),
+        )
 
 
 def disruption_id(source_event_key: str, commitment_id: str) -> str:

@@ -67,7 +67,13 @@ def test_the_gmail_push_handler_graph_builds_from_environment(configured) -> Non
     ingestion = handler._queue._worker._ingestion
     assert isinstance(ingestion._extractor, VertexGeminiExtractor)
     assert isinstance(ingestion._matcher, ConservativeCommitmentMatcher)
-    assert ingestion._phase3 is None, "Phase 3 handoff has no durable queue wired yet"
+    # The Phase 3 handoff must be a durable outbox, not absent and not in-memory.
+    from app.repositories.disruptions import FirestoreOutbox
+
+    assert isinstance(ingestion._phase3, FirestoreOutbox)
+    from app.adapters.pubsub_publisher import PubSubCommandPublisher
+
+    assert isinstance(ingestion._phase3._publisher, PubSubCommandPublisher)
 
 
 def test_the_maintenance_handler_graph_builds_from_environment(configured) -> None:
@@ -80,6 +86,10 @@ def test_the_maintenance_handler_graph_builds_from_environment(configured) -> No
     assert isinstance(handler, MaintenanceHandler)
     assert isinstance(handler._maintenance._retention._store, FirestoreRetentionStore)
     assert isinstance(handler._maintenance._watches, GmailWatchService)
+    # Stragglers from a failed immediate publish must get retried daily.
+    from app.repositories.disruptions import FirestoreOutbox
+
+    assert isinstance(handler._maintenance._outbox, FirestoreOutbox)
 
 
 def test_the_google_oauth_and_picker_graphs_build_from_environment(configured) -> None:

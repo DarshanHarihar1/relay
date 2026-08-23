@@ -70,8 +70,10 @@ class FakeCommitments:
 class FakeDisruptions:
     def __init__(self) -> None:
         self.disruptions: list = []
+        self.assessments: list = []
 
-    async def create_disruption_if_absent(self, disruption) -> bool:
+    async def create_disruption_if_absent(self, disruption, *, assessment=None) -> bool:
+        self.assessments.append(assessment)
         if any(existing.id == disruption.id for existing in self.disruptions):
             return False
         self.disruptions.append(disruption)

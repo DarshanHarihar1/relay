@@ -80,21 +80,32 @@ class DailyMaintenance:
     Both steps are idempotent, so a repeated or overlapping run is harmless.
     """
 
-    def __init__(self, *, retention: Any, watches: Any = None) -> None:
+    def __init__(self, *, retention: Any, watches: Any = None, outbox: Any = None) -> None:
         self._retention = retention
         self._watches = watches
+        self._outbox = outbox
 
     async def run_daily_maintenance(self) -> dict[str, int]:
         summary = await self._retention.purge_expired_ingestion_data(now=_utc_now())
         renewed: list[str] = []
         if self._watches is not None:
             renewed = await self._watches.renew_expiring_watches()
+        # Any assessment whose immediate publish failed is still in the outbox.
+        published = await self._outbox.drain() if self._outbox is not None else 0
         # Counts only. Nothing identifying reaches this log line.
         logger.info(
             "daily_maintenance",
-            extra={"purged": summary.total(), "watches_renewed": len(renewed)},
+            extra={
+                "purged": summary.total(),
+                "watches_renewed": len(renewed),
+                "assessments_published": published,
+            },
         )
-        return {"purged": summary.total(), "watches_renewed": len(renewed)}
+        return {
+            "purged": summary.total(),
+            "watches_renewed": len(renewed),
+            "assessments_published": published,
+        }
 
 
 def _utc_now() -> datetime:

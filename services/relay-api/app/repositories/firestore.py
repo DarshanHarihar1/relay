@@ -18,6 +18,7 @@ USER_COLLECTIONS = frozenset(
         "provider_events",
         "source_events",
         "audit_log",
+        "outbox",
     }
 )
 

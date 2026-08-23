@@ -9,33 +9,54 @@
       ]
     },
     {
-      "collectionGroup": "repair_plans",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "commitments",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "planned_start", "order": "ASCENDING" }
+        { "fieldPath": "starts_at", "order": "ASCENDING" },
+        { "fieldPath": "id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "disruptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "commitment_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "outbox",
+      "fieldPath": "published_at",
+      "indexes": [
+        { "queryScope": "COLLECTION", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
       ]
     },
     {
       "collectionGroup": "source_events",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "occurred_at", "order": "DESCENDING" }
+      "fieldPath": "created_at",
+      "indexes": [
+        { "queryScope": "COLLECTION", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
       ]
     },
     {
-      "collectionGroup": "provider_events",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "occurred_at", "order": "DESCENDING" }
+      "collectionGroup": "audit_log",
+      "fieldPath": "created_at",
+      "indexes": [
+        { "queryScope": "COLLECTION", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "disruptions",
+      "fieldPath": "created_at",
+      "indexes": [
+        { "queryScope": "COLLECTION", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
       ]
     }
-  ],
-  "fieldOverrides": []
+  ]
 }
