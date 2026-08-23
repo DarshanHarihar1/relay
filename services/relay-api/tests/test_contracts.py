@@ -109,3 +109,39 @@ def test_api_errors_have_a_safe_problem_body_and_correlation_id():
         "message": "The requested resource was not found.",
         "correlation_id": "correlation-1",
     }
+
+
+def test_phase3_commitment_edge_approval_extensions_are_additive() -> None:
+    """A record built before the Phase 3 planning fields existed must still
+    validate. These fields are optional so Commitment, Edge, and Approval stay
+    the one canonical model across phases, per the project's no-duplicate-model
+    rule."""
+    from app.contracts import Approval, Commitment, Edge
+
+    commitment = Commitment(
+        id="c1",
+        user_id="u1",
+        source_event_key="seed:c1",
+        summary="Dinner",
+        starts_at=datetime(2026, 8, 22, 22, 0, tzinfo=timezone.utc),
+        ends_at=datetime(2026, 8, 22, 23, 0, tzinfo=timezone.utc),
+    )
+    assert commitment.protected is False
+    assert commitment.required_buffer_minutes == 0
+    assert commitment.participants == []
+    assert commitment.flexibility is None
+
+    edge = Edge(id="e1", from_ref="c1", to_ref="c2", relation="depends_on")
+    assert edge.kind is None
+    assert edge.min_gap_minutes == 0
+    assert edge.confidence == 1.0
+
+    approval = Approval(
+        id="a1",
+        user_id="u1",
+        action_ids=["act1"],
+        state="awaiting_approval",
+        version=1,
+        correlation_id="corr-1",
+    )
+    assert approval.expires_at is None

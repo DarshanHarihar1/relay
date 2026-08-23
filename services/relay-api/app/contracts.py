@@ -119,6 +119,9 @@ class Approval(ContractModel):
     correlation_id: NonEmptyString
     created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Phase 3 extension. A repair-plan approval batch expires; a Phase 1
+    # approval created before this field existed simply has no expiry.
+    expires_at: AwareDatetime | None = None
 
 
 class ApprovalDecisionRequest(ContractModel):
@@ -144,6 +147,19 @@ class Commitment(ContractModel):
     updated_at: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     version: int = Field(default=1, ge=1)
     correlation_id: NonEmptyString | None = None
+    # Phase 3 extension. Every field below is optional so a Phase 1/2 commitment
+    # still validates. summary/starts_at/ends_at already carry Phase 3's
+    # "title"/"planned_start"/"planned_end" concepts; this adds only what is
+    # genuinely new: the flexibility window and repair-planning attributes.
+    type: NonEmptyString | None = None
+    earliest_start: AwareDatetime | None = None
+    latest_start: AwareDatetime | None = None
+    location_place_id: NonEmptyString | None = None
+    criticality: Literal["LOW", "NORMAL", "HIGH", "CRITICAL"] | None = None
+    flexibility: Literal["FLEXIBLE", "NEGOTIABLE", "FIXED", "NEVER_MOVE"] | None = None
+    required_buffer_minutes: int = Field(default=0, ge=0)
+    participants: list[NonEmptyString] = Field(default_factory=list)
+    protected: bool = False
 
 
 class Edge(ContractModel):
@@ -151,6 +167,21 @@ class Edge(ContractModel):
     from_ref: NonEmptyString
     to_ref: NonEmptyString
     relation: NonEmptyString
+    # Phase 3 extension. `relation` stays a free label for compatibility;
+    # `kind` is the closed set the planner's feasibility engine switches on.
+    kind: (
+        Literal[
+            "must_finish_before",
+            "requires_travel",
+            "depends_on",
+            "social_dependency",
+            "requires_location",
+            "same_resource",
+        ]
+        | None
+    ) = None
+    min_gap_minutes: int = Field(default=0, ge=0)
+    confidence: float = Field(default=1.0, ge=0, le=1)
 
 
 class Provenance(ContractModel):
