@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import base64
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import hashlib
+import hmac
 
 import httpx
 
@@ -182,8 +185,22 @@ class VapiVoiceAdapter:
         return None
 
     def verify_webhook(self, *, headers: Mapping[str, str], raw_body: bytes, url: str) -> None:
-        del headers, raw_body, url
-        raise NotImplementedError
+        del url
+        secret = self._settings.vapi_webhook_secret
+        signature = next(
+            (value for key, value in headers.items() if key.lower() == "x-vapi-signature"),
+            None,
+        )
+        if not secret or not signature:
+            raise ValueError("Missing Vapi webhook signature")
+        candidate = signature.removeprefix("sha256=")
+        digest = hmac.new(secret.encode(), raw_body, hashlib.sha256).digest()
+        valid = hmac.compare_digest(candidate, digest.hex()) or hmac.compare_digest(
+            candidate,
+            base64.b64encode(digest).decode(),
+        )
+        if not valid:
+            raise ValueError("Invalid Vapi webhook signature")
 
 
 __all__ = [

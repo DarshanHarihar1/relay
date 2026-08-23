@@ -94,6 +94,18 @@ paths:
       responses:
         "204":
           description: Action work accepted
+  /v1/webhooks/vapi:
+    post:
+      operationId: receiveVapiWebhook
+      responses:
+        "204":
+          description: Vapi callback accepted
+  /v1/webhooks/twilio:
+    post:
+      operationId: receiveTwilioWebhook
+      responses:
+        "204":
+          description: Twilio callback accepted
 components:
   securitySchemes:
     bearerAuth:

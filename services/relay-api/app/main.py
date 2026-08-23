@@ -38,6 +38,7 @@ from .routes.actions import router as actions_router
 from .routes.google import pickup_router, router as google_router
 from .routes.pubsub import router as pubsub_router
 from .routes.repair_plans import CreateRepairPlanRequest, CreateRepairPlanResponse, router as repair_plans_router
+from .routes.webhooks import router as webhooks_router
 from .services.retention import RedactingLogFilter
 from .workers.action_dispatch import router as action_dispatch_router
 
@@ -75,6 +76,7 @@ app.include_router(pickup_router)
 app.include_router(pubsub_router)
 app.include_router(repair_plans_router)
 app.include_router(action_dispatch_router)
+app.include_router(webhooks_router)
 
 
 def create_app() -> FastAPI:

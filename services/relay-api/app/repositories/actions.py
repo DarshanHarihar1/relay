@@ -29,6 +29,13 @@ class ApprovalVersionConflict(Exception):
 class ActionRepository(Protocol):
     async def get(self, user_id: str, action_id: str) -> ActionRecord | None: ...
 
+    async def resolve_action(
+        self,
+        *,
+        action_id: str | None = None,
+        provider_ref: str | None = None,
+    ) -> tuple[str, ActionRecord] | None: ...
+
     async def create(self, action: ActionRecord) -> ActionRecord: ...
 
     async def create_approval(self, approval: Approval) -> Approval: ...
@@ -100,6 +107,25 @@ class FirestoreActionRepository:
         await self._document(action.user_id, action.id).create(firestore_data(action))
         return action
 
+    async def resolve_action(
+        self,
+        *,
+        action_id: str | None = None,
+        provider_ref: str | None = None,
+    ) -> tuple[str, ActionRecord] | None:
+        if not action_id and not provider_ref:
+            return None
+        field = "id" if action_id else "provider_ref"
+        value = action_id or provider_ref
+        query = self._client.collection_group("actions").where(
+            filter=FieldFilter(field, "==", value)
+        ).limit(2)
+        snapshots = [snapshot async for snapshot in query.stream()]
+        if len(snapshots) != 1:
+            return None
+        action = ActionRecord.model_validate(as_aware_datetimes(snapshots[0].to_dict()))
+        return action.user_id, action
+
     async def create_approval(self, approval: Approval) -> Approval:
         await self._approval_document(approval.user_id, approval.id).create(firestore_data(approval))
         return approval
@@ -109,6 +135,40 @@ class FirestoreActionRepository:
         if not snapshot.exists:
             return None
         return ActionDispatchRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+
+    async def apply_provider_outcome(
+        self,
+        user_id: str,
+        action_id: str,
+        state: ActionState,
+        evidence: dict[str, JsonValue],
+        correlation_id: str,
+    ) -> ActionRecord:
+        document = self._document(user_id, action_id)
+
+        @async_transactional
+        async def apply(transaction):
+            snapshot = await document.get(transaction=transaction)
+            if not snapshot.exists:
+                raise LookupError
+            action = ActionRecord.model_validate(as_aware_datetimes(snapshot.to_dict()))
+            if action.state is state:
+                return action
+            validate_transition(action.state, state)
+            now = utc_now()
+            updated = action.model_copy(
+                update={
+                    "state": state,
+                    "verification_evidence": evidence,
+                    "updated_at": now,
+                    "correlation_id": correlation_id,
+                    "version": action.version + 1,
+                }
+            )
+            transaction.update(document, firestore_data(updated))
+            return updated
+
+        return await apply(self._client.transaction())
 
     async def decide_approval(
         self,
