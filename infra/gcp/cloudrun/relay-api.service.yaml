@@ -2,9 +2,8 @@ apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: relay-api
-  labels:
-    relay.dev/region: asia-south1
   annotations:
+    relay.dev/region: asia-south1
     run.googleapis.com/ingress: internal-and-cloud-load-balancing
     run.googleapis.com/invoker-iam-disabled: "false"
     relay.dev/pubsub-route: /v1/events/gmail
@@ -49,11 +48,8 @@ spec:
                 secretKeyRef:
                   name: GOOGLE_OAUTH_STATE_SIGNING_KEY
                   key: latest
-            - name: MAPS_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: MAPS_API_KEY
-                  key: latest
+            # MAPS_API_KEY returns when Phase 3 actually calls Routes and Places.
+            # Mounting a secret no code reads would only add surface.
             - name: APP_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:

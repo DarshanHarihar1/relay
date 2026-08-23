@@ -2,9 +2,8 @@ apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: relay-worker
-  labels:
-    relay.dev/region: asia-south1
   annotations:
+    relay.dev/region: asia-south1
     run.googleapis.com/ingress: internal
     run.googleapis.com/invoker-iam-disabled: "false"
     relay.dev/pubsub-route: /internal/pubsub/relay-work
