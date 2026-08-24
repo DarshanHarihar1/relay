@@ -27,6 +27,7 @@ from app.contracts import (  # noqa: E402
 )
 from app.domain.impact import CandidateChange, CandidateKind, RepairCandidate, RepairPlan  # noqa: E402
 from app.repositories.firestore import as_aware_datetimes, firestore_data, user_document  # noqa: E402
+from app.services.action_state import derive_action_idempotency_key  # noqa: E402
 
 
 SeedMode = Literal["rehearsal", "live"]
@@ -272,7 +273,7 @@ def _actions(*, user_id: str, plan_id: str, plan_version: int, now: datetime, ex
             repair_plan_version=plan_version,
             type=action_type,
             target_ref=target_ref,
-            idempotency_key=f"demo:{action_id}:v1",
+            idempotency_key=derive_action_idempotency_key(plan_version, action_type, target_ref, snapshot),
             authorization_snapshot=snapshot,
             state=ActionState.AWAITING_APPROVAL,
             correlation_id="demo:plan",
