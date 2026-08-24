@@ -10,7 +10,7 @@ from app.repositories.actions import ApprovalVersionConflict
 from app.services.action_state import derive_action_idempotency_key
 
 
-NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 
 
 def authorized_voice_action(*, id: str, expires_at: datetime = NOW + timedelta(minutes=5)) -> ActionRecord:

@@ -10,7 +10,7 @@ from app.domain.impact import ActionKind, make_action_idempotency_key
 from app.repositories.actions import ApprovalVersionConflict
 
 
-NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 
 
 def voice_action(action_id: str, *, state: ActionState = ActionState.AWAITING_APPROVAL) -> ActionRecord:
