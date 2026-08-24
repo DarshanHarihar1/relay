@@ -161,6 +161,8 @@ class FirestoreProductRepository:
                     )
                 raise PickupVersionConflict
 
+            audit_exists = (await audit_document.get(transaction=transaction)).exists
+
             now = datetime.now(timezone.utc)
             updated = commitment.model_copy(
                 update={
@@ -176,7 +178,7 @@ class FirestoreProductRepository:
                 transaction.delete(contact_document)
             else:
                 transaction.set(contact_document, firestore_data(selected_contact))
-            if not (await audit_document.get(transaction=transaction)).exists:
+            if not audit_exists:
                 audit = AuditLogEntry(
                     id=audit_document.id,
                     user_id=user_id,
