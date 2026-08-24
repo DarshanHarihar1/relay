@@ -63,8 +63,6 @@ export function PickupContactPrompt({ commitmentId, version, onRefresh }: Props)
     try {
       await submitPickup(commitmentId, command);
       onRefresh?.();
-      setMode("start");
-      setPicker(null);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Pickup could not be updated.";
       setError(message.includes("409") ? "This pickup changed. Review the current plan." : message);
