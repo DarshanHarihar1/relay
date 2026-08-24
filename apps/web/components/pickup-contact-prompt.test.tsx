@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { PickupContactPrompt } from "./pickup-contact-prompt";
 import { submitPickup } from "../lib/relay-api";

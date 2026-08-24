@@ -64,7 +64,7 @@ function DashboardShell({ user }: { user: User }) {
 
   useEffect(() => {
     let active = true;
-    let unsubscribe = () => undefined;
+    let unsubscribe: () => void = () => undefined;
     void subscribeToForegroundMessages({
       invalidateDashboard: dashboard.refresh,
       announce: setNotificationAnnouncement,

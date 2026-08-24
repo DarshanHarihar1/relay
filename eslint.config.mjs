@@ -23,5 +23,14 @@ export default tseslint.config(
         it: "readonly"
       }
     }
+  },
+  {
+    files: ["apps/web/public/firebase-messaging-sw.js"],
+    languageOptions: {
+      globals: {
+        self: "readonly",
+        importScripts: "readonly"
+      }
+    }
   }
 );

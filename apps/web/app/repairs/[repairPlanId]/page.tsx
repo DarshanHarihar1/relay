@@ -1,14 +1,15 @@
 import { RelayActions } from "../../../components/relay-action-status";
 
-export default function RepairPlanPage({
+export default async function RepairPlanPage({
   params,
 }: {
-  params: { repairPlanId: string };
+  params: Promise<{ repairPlanId: string }>;
 }) {
+  const { repairPlanId } = await params;
   return (
     <main>
       <h1>Repair plan</h1>
-      <p>Plan {params.repairPlanId}</p>
+      <p>Plan {repairPlanId}</p>
       <RelayActions actions={[]} />
     </main>
   );
