@@ -18,3 +18,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 coverage/
+.pnpm-store/
+apps/web/next-env.d.ts
+apps/web/test-results/
